@@ -1,0 +1,49 @@
+---
+services:
+  backend:
+    build:
+      context: .
+      # Specifica il target stage da costruire. Il valore viene letto dalla variabile DOCKER_BUILD_TARGET.
+      target: ${DOCKER_BUILD_TARGET:-production}
+    ports:
+      - "3000:3000"
+    # Monta il codice sorgente solo per lo stage di sviluppo,
+    # permettendo ad 'air' di rilevare le modifiche ai file.
+    volumes:
+      - ./:/app
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  db:
+    image: mariadb:10.6
+    environment:
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MARIADB_DATABASE=${DB_NAME}
+      - MARIADB_USER=${DB_USER}
+      - MARIADB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER}", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  db-data:
+    driver: local
