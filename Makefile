@@ -4,23 +4,33 @@
 BINARY_NAME=taskmaster
 GO_FILES=$(shell find . -name '*.go' -not -path "./vendor/*")
 
+# Variables read from .env file
+include .env
+
 # Development tools
 AIR=air
+MIGRATE=migrate
 
 all: build
 
 # Development
-dev: install-tools
+dev: install-tools 
+	make migrate-up
 	make -j4 watch-go
 
 # Watchers
 watch-go:
 	$(AIR)
 
+migrate-up:
+	@echo "Running migrations up..."
+	$(MIGRATE) -path db/migrations -database "mysql://$(DB_USER):$(DB_PASSWORD)@tcp(db:3306)/$(DB_NAME)" up
+
 # Build commands
 build: clean build-go
 
 build-go:
+	make migrate-up
 	CGO_ENABLED=0 go build -o $(BINARY_NAME) ./cmd/server
 
 # Testing
@@ -42,6 +52,7 @@ clean:
 # Install development tools
 install-tools: 
 	go install github.com/air-verse/air@latest
+	go install -tags 'mysql' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
 # Help
 help:

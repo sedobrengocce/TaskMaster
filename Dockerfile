@@ -19,6 +19,7 @@ RUN go install github.com/air-verse/air@latest
 # Copy dependency files first
 COPY go.* ./
 COPY Makefile ./
+COPY .env ./
 
 # Install dependencies and create directories
 RUN make install-tools
