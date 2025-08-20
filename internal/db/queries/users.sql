@@ -31,6 +31,11 @@ SELECT * FROM users
 WHERE email = ? AND password_hash = ?
 LIMIT 1;
 
+-- name: GetUserByEmail :one
+-- Recupera un utente dal suo indirizzo email.
+SELECT * FROM users
+WHERE email = ? LIMIT 1;
+
 -- name: GetUserByTerm :many
 -- Recupera gli utenti che corrispondono a un termine di ricerca.
 SELECT * FROM users

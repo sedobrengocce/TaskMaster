@@ -1,11 +1,16 @@
 package server
 
-import "github.com/labstack/echo/v4"
+func (s *Server)RegisterRoutes() {
+	api := s.echo.Group("/api/")
 
-// RegisterRoutes registra tutte le route per l'applicazione.
-func RegisterRoutes(e *echo.Echo) {
-	// Definiamo una route GET per /healthcheck che userà HealthCheckHandler
-	e.GET("/healthcheck", HealthCheckHandler)
+	// GET
+	api.GET("/healthcheck", s.HealthCheckHandler)
 
-	// ...qui verranno aggiunte le altre route in futuro
+	// POST
+	api.POST("/register", s.RegisterUserHandler)
+
+	// PUT
+
+	// DELETE
+
 }

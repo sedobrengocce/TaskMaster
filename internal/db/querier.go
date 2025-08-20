@@ -13,6 +13,8 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) error
 	// Elimina un utente e restituisce l'utente eliminato.
 	DeleteUser(ctx context.Context, id int32) error
+	// Recupera un utente dal suo indirizzo email.
+	GetUserByEmail(ctx context.Context, email string) (User, error)
 	// Recupera un utente dal suo indirizzo email e dalla password.
 	GetUserByEmailAndPassword(ctx context.Context, arg GetUserByEmailAndPasswordParams) (User, error)
 	// Recupera un utente dal suo ID.

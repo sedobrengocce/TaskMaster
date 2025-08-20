@@ -1,23 +1,33 @@
 package server
 
 import (
+	"database/sql"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/sedobrengocce/TaskMaster/internal/db"
 )
 
-// Run avvia il server web.
-func Run() error {
-	// Crea una nuova istanza di Echo
-	e := echo.New()
-
-	// Middleware di base
-	e.Use(middleware.Logger())  // Logga le richieste HTTP
-	e.Use(middleware.Recover()) // Recupera da eventuali panic e li gestisce
-
-	// Registra le route dell'applicazione
-	RegisterRoutes(e)
-
-	// Avvia il server sulla porta 8080
-	// Questo corrisponde alla porta esposta nel Dockerfile
-	return e.Start(":3000")
+type Server struct {
+	conn 	*sql.DB
+	DB 		*db.Queries
+	echo	*echo.Echo
 }
+
+func NewServer(conn *sql.DB) *Server {
+	return &Server{
+		conn: conn,
+		DB:   db.New(conn),
+		echo: echo.New(),
+	}
+}
+
+func (s *Server) Run() error {
+	s.echo.Use(middleware.Logger())  // Logga le richieste HTTP
+	s.echo.Use(middleware.Recover()) // Recupera da eventuali panic e li gestisce
+
+	s.RegisterRoutes(s.echo)
+
+	return s.echo.Start(":3000")
+}
+
