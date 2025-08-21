@@ -9,16 +9,20 @@ import (
 )
 
 type Server struct {
-	conn 	*sql.DB
-	DB 		*db.Queries
-	echo	*echo.Echo
+	conn 			*sql.DB
+	DB 				*db.Queries
+	echo			*echo.Echo
+	JWTSecret 		[]byte
+	RefreshSecret 	[]byte
 }
 
-func NewServer(conn *sql.DB) *Server {
+func NewServer(conn *sql.DB, jwtSecret string, refreshSecret string) *Server {
 	return &Server{
 		conn: conn,
 		DB:   db.New(conn),
 		echo: echo.New(),
+		JWTSecret: []byte(jwtSecret),
+		RefreshSecret: []byte(refreshSecret),
 	}
 }
 

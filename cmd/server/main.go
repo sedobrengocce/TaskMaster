@@ -23,7 +23,7 @@ func main() {
 	}
 	defer conn.Close()
 
-	srv := server.NewServer(conn)
+	srv := server.NewServer(conn, Env.GetJWTSecret(), Env.GetRefreshSecret())
 	if err := srv.Run(); err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

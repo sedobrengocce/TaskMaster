@@ -2,7 +2,9 @@ package server
 
 import (
 	"net/http"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/sedobrengocce/TaskMaster/internal/db"
 	"github.com/sedobrengocce/TaskMaster/internal/utils"
@@ -58,5 +60,51 @@ func (s *Server)RegisterUserHandler(c echo.Context) error {
 
 
 	return c.JSON(http.StatusOK, newUser)
+}
+
+type LoginUserRequest struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password"`
+}
+
+func (s *Server)LoginUserHandler(c echo.Context) error {
+	var req LoginUserRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	user, err := s.DB.GetUserByEmail(c.Request().Context(), req.Email)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid email or password"})
+	}
+
+	if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid email or password"})
+	}
+
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"email": user.Email,
+		"id":    user.ID,
+		"exp":	 jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+	})
+	tokenString, err := jwtToken.SignedString([]byte(s.JWTSecret))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+	}
+
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id": user.ID,
+		"exp": jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+	})
+	refreshTokenString, err := refreshToken.SignedString([]byte(s.JWTSecret))
+	if err != nil {	
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"jwt": tokenString, "refresh_token": refreshTokenString})
 }
 

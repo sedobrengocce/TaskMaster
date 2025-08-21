@@ -33,4 +33,11 @@ func (e *Env) GetDBPassword() string {
 	return e.dotenv.GetString("DB_PASSWORD")
 }
 
+func (e *Env) GetJWTSecret() string {
+	return e.dotenv.GetString("JWT_SECRET")
+}
+
+func (e *Env) GetRefreshSecret() string {
+	return e.dotenv.GetString("REFRESH_SECRET")
+}
 
