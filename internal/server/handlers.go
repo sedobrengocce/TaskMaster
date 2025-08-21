@@ -118,6 +118,19 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		UserAgent: c.Request().UserAgent(),
 	})
 
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to store refresh token"})
+	}
+
+	cookie := new(http.Cookie)
+	cookie.Name = "refresh_token"
+	cookie.Value = refreshTokenString
+	cookie.Expires = time.Now().Add(24 * time.Hour)
+	cookie.HttpOnly = true
+	cookie.Secure = true
+	cookie.SameSite = http.SameSiteStrictMode
+	c.SetCookie(cookie)
+
 
 	return c.JSON(http.StatusOK, map[string]string{"jwt": tokenString})
 }
