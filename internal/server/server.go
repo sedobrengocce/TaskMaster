@@ -26,7 +26,7 @@ func (s *Server) Run() error {
 	s.echo.Use(middleware.Logger())  // Logga le richieste HTTP
 	s.echo.Use(middleware.Recover()) // Recupera da eventuali panic e li gestisce
 
-	s.RegisterRoutes(s.echo)
+	s.RegisterRoutes()
 
 	return s.echo.Start(":3000")
 }

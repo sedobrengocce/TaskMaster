@@ -1,0 +1,22 @@
+.PHONY: dev prod stop help
+
+dev:
+	@echo "Running development server..."
+	@DOCKER_BUILD_TARGET=develop docker compose up -d --build
+
+prod:
+	@echo "Running production server..."
+	@DOCKER_BUILD_TARGET=production docker compose up -d --build
+
+stop:
+	@echo "Stopping all containers..."
+	@docker compose down
+
+help:
+	@echo "Usage:"
+	@echo "  make dev   - Run the development server"
+	@echo "  make prod  - Run the production server"
+	@echo "  make stop  - Stop all running containers"
+	@echo "  make help  - Show this help message"
+	@echo ""
+	@echo "Note: Use 'make dev' for development and 'make prod' for production."

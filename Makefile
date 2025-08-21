@@ -1,4 +1,4 @@
-.PHONY: all build dev clean test migrate-up migrate-down watch-assets
+.PHONY: all build dev clean test migrate-up migrate-down watch-go install-tools help
 
 # Variables
 BINARY_NAME=taskmaster
@@ -26,6 +26,10 @@ migrate-up:
 	@echo "Running migrations up..."
 	$(MIGRATE) -path db/migrations -database "mysql://$(DB_USER):$(DB_PASSWORD)@tcp(db:3306)/$(DB_NAME)" up
 
+migrate-down:
+	@echo "Running migrations down..."
+	$(MIGRATE) -path db/migrations -database "mysql://$(DB_USER):$(DB_PASSWORD)@tcp(db:3306)/$(DB_NAME)" down
+
 # Build commands
 build: clean build-go
 
@@ -44,6 +48,7 @@ vendor: go.mod go.sum
 
 # Cleanup
 clean:
+	make migrate-down
 	rm -rf \
 		$(BINARY_NAME) \
 		tmp/* \
