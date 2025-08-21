@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"time"
 )
 
 type TasksTaskType string
@@ -58,6 +59,17 @@ type Project struct {
 	Name      string
 	ColorHex  sql.NullString
 	CreatedAt sql.NullTime
+}
+
+type RefreshToken struct {
+	ID        int64
+	UserID    int64
+	TokenHash string
+	ExpiresAt time.Time
+	CreatedAt sql.NullTime
+	RevokedAt sql.NullTime
+	IpAddress string
+	UserAgent string
 }
 
 type Task struct {

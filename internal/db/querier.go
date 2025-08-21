@@ -13,6 +13,7 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) error
 	// Elimina un utente e restituisce l'utente eliminato.
 	DeleteUser(ctx context.Context, id int32) error
+	GetRefreshToken(ctx context.Context, userID int64) (GetRefreshTokenRow, error)
 	// Recupera un utente dal suo indirizzo email.
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	// Recupera un utente dal suo indirizzo email e dalla password.
@@ -21,6 +22,8 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id int32) (User, error)
 	// Recupera gli utenti che corrispondono a un termine di ricerca.
 	GetUserByTerm(ctx context.Context, dollar_1 interface{}) ([]User, error)
+	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error
+	RevokeRefreshToken(ctx context.Context, userID int64) error
 	// Aggiorna un utente esistente e restituisce l'utente aggiornato.
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 }

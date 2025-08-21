@@ -37,7 +37,7 @@ func (s *Server)RegisterUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	hashedPassword, err := utils.HashPassword(req.Password)
+	hashedPassword, err := utils.HashString(req.Password)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to hash password"})
 	}
@@ -82,7 +82,7 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid email or password"})
 	}
 
-	if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
+	if !utils.CheckStringHash(req.Password, user.PasswordHash) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid email or password"})
 	}
 
@@ -105,6 +105,20 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"jwt": tokenString, "refresh_token": refreshTokenString})
+	hashedRefreshToken, err := utils.HashString(refreshTokenString)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to hash refresh token"})
+	}
+
+	err = s.DB.InsertRefreshToken(c.Request().Context(), db.InsertRefreshTokenParams{
+		UserID:    int64(user.ID),
+		TokenHash: hashedRefreshToken,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		IpAddress: c.RealIP(),
+		UserAgent: c.Request().UserAgent(),
+	})
+
+
+	return c.JSON(http.StatusOK, map[string]string{"jwt": tokenString})
 }
 
