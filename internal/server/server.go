@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/redis/go-redis/v9"
 	"github.com/sedobrengocce/TaskMaster/internal/db"
 )
 
@@ -16,15 +17,17 @@ type Server struct {
 	echo			*echo.Echo
 	JWTSecret 		[]byte
 	RefreshSecret 	[]byte
+	Redis			*redis.Client
 }
 
-func NewServer(conn *sql.DB, jwtSecret string, refreshSecret string) *Server {
+func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecret string) *Server {
 	return &Server{
 		conn: conn,
 		DB:   db.New(conn),
 		echo: echo.New(),
 		JWTSecret: []byte(jwtSecret),
 		RefreshSecret: []byte(refreshSecret),
+		Redis: redis,
 	}
 }
 
@@ -40,14 +43,14 @@ func (s *Server) Run() error {
 	s.echo.Use(echojwt.WithConfig(echojwt.Config{
 		SigningKey: s.JWTSecret,
 		Skipper: func(c echo.Context) bool {
-			if c.Path() == "/api/register" || c.Path() == "/api/login" || c.Path() == "/healthcheck" {
+			if c.Path() == "/api/register" || c.Path() == "/api/login" || c.Path() == "/healthcheck" || c.Path() == "/api/refresh_token" {
 				return true
 			}
 			return false
 		},
 		ErrorHandler: func(c echo.Context, err error) error {
 			if err.Error() == "missing or malformed jwt" {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or missing token"})
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Missing or malformed token"})
 			} else if err.Error() == "invalid or expired jwt" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token is invalid or expired"}) // Gestione del refresh token
 			}

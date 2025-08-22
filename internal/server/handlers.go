@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -86,18 +87,38 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid email or password"})
 	}
 
+	jti, err := utils.GenerateRandomString(32)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token ID"})
+	}
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"email": user.Email,
 		"id":    user.ID,
-		"exp":	 jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+		"iss": "taskmaster",
+		"sub": "user_auth",
+		"aud": "taskmaster_users",
+		"nbf": jwt.NewNumericDate(time.Now()),
+		"iat": jwt.NewNumericDate(time.Now()),
+		"jti": jti,
+		"exp": jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
 	})
 	tokenString, err := jwtToken.SignedString([]byte(s.JWTSecret))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
 	}
 
+	rjti , err := utils.GenerateRandomString(32)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token ID"})
+	}
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id": user.ID,
+		"iss": "taskmaster",
+		"sub": "user_refresh",
+		"aud": "taskmaster_users",
+		"nbf": jwt.NewNumericDate(time.Now()),
+		"iat": jwt.NewNumericDate(time.Now()),
+		"jti": rjti,
 		"exp": jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 	})
 	refreshTokenString, err := refreshToken.SignedString([]byte(s.JWTSecret))
@@ -133,5 +154,178 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 
 
 	return c.JSON(http.StatusOK, map[string]string{"jwt": tokenString})
+}
+
+func (s *Server)RefreshTokenHandler(c echo.Context) error {
+	cookie, err := c.Cookie("refresh_token")
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Missing refresh token"})
+	}
+
+	token, err := jwt.Parse(cookie.Value, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, echo.NewHTTPError(http.StatusUnauthorized, "Invalid token signing method")
+		}
+		return s.RefreshSecret, nil
+	})
+
+	if err != nil || !token.Valid {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or expired refresh token"})
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token claims"})
+	}
+
+	expirationTime, err := claims.GetExpirationTime()
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token expiration"})
+	}
+
+	if time.Now().After(expirationTime.Time) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Refresh token has expired"})
+	}
+
+	userIDFloat, ok := claims["id"].(float64)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token claims"})
+	}
+	userID := int64(userIDFloat)
+
+	storedToken, err := s.DB.GetRefreshToken(c.Request().Context(), userID)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Refresh token not found"})
+	}
+
+	if time.Now().After(storedToken.ExpiresAt) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Refresh token has expired"})
+	}
+
+	if !utils.CheckStringHash(cookie.Value, storedToken.TokenHash) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid refresh token"})
+	}
+
+	user, err := s.DB.GetUserByID(c.Request().Context(), int32(userID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve user"})
+	}
+
+	jti, err := utils.GenerateRandomString(32)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token ID"})
+	}
+	newJwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"email": user.Email,
+		"id":    user.ID,
+		"iss": "taskmaster",
+		"sub": "user_auth",
+		"aud": "taskmaster_users",
+		"nbf": jwt.NewNumericDate(time.Now()),
+		"iat": jwt.NewNumericDate(time.Now()),
+		"jti": jti,
+		"exp":	 jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+	})
+	newTokenString, err := newJwtToken.SignedString([]byte(s.JWTSecret))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+	}
+
+	rjti , err := utils.GenerateRandomString(32)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token ID"})
+	}
+	newRefreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id": user.ID,
+		"iss": "taskmaster",
+		"sub": "user_refresh",
+		"aud": "taskmaster_users",
+		"nbf": jwt.NewNumericDate(time.Now()),
+		"iat": jwt.NewNumericDate(time.Now()),
+		"jti": rjti,
+		"exp": jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+	})
+	newRefreshTokenString, err := newRefreshToken.SignedString([]byte(s.JWTSecret))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token"})
+	}
+	hashedNewRefreshToken, err := utils.HashString(newRefreshTokenString)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to hash refresh token"})
+	}
+	err = s.DB.InsertRefreshToken(c.Request().Context(), db.InsertRefreshTokenParams{
+		UserID:    int64(user.ID),
+		TokenHash: hashedNewRefreshToken,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		IpAddress: c.RealIP(),
+		UserAgent: c.Request().UserAgent(),
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to store refresh token"})
+	}
+	newCookie := new(http.Cookie)
+	newCookie.Name = "refresh_token"
+	newCookie.Value = newRefreshTokenString
+	newCookie.Expires = time.Now().Add(24 * time.Hour)
+	newCookie.HttpOnly = true
+	newCookie.Secure = true
+	newCookie.SameSite = http.SameSiteStrictMode
+	c.SetCookie(newCookie)
+
+	return c.JSON(http.StatusOK, map[string]string{"jwt": newTokenString})
+}
+
+func (s *Server)LogoutUserHandler(c echo.Context) error {
+	authHeader := c.Request().Header.Get("Authorization")
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+	// Parse del token per ottenere la sua data di scadenza
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, "Invalid token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return c.JSON(http.StatusBadRequest, "Invalid token claims")
+	}
+
+	expFloat, ok := claims["exp"].(float64)
+	if !ok {
+		return c.JSON(http.StatusBadRequest, "Invalid expiration claim")
+	}
+	
+	expTime := time.Unix(int64(expFloat), 0)
+	ttl := time.Until(expTime)
+
+	if ttl <= 0 {
+		return c.JSON(http.StatusOK, map[string]string{"message": "Logged out successfully"})
+	}
+
+	err = s.Redis.Set(c.Request().Context(), tokenString, "revoked", ttl).Err()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, "Could not log out")
+	}
+	userIDFloat, ok := claims["id"].(float64)
+	if !ok {
+		return c.JSON(http.StatusBadRequest, "Invalid token claims")
+	}
+	userID := int64(userIDFloat)
+
+	err = s.DB.RevokeRefreshToken(c.Request().Context(), userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to revoke refresh tokens"})
+	}
+
+	expiredCookie := new(http.Cookie)
+	expiredCookie.Name = "refresh_token"
+	expiredCookie.Value = ""
+	expiredCookie.Expires = time.Now().Add(-1 * time.Hour)
+	expiredCookie.HttpOnly = true
+	expiredCookie.Secure = true
+	expiredCookie.SameSite = http.SameSiteStrictMode
+	c.SetCookie(expiredCookie)
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Logged out successfully"})
 }
 

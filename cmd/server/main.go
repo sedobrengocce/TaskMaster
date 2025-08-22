@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/sedobrengocce/TaskMaster/internal/env"
 	"github.com/sedobrengocce/TaskMaster/internal/server"
 
@@ -23,7 +24,13 @@ func main() {
 	}
 	defer conn.Close()
 
-	srv := server.NewServer(conn, Env.GetJWTSecret(), Env.GetRefreshSecret())
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "redis:6379",
+		Password: Env.GetRedisPass(), 
+		DB:       0,  
+	})
+
+	srv := server.NewServer(conn, rdb, Env.GetJWTSecret(), Env.GetRefreshSecret())
 	if err := srv.Run(); err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

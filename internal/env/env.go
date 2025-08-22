@@ -41,3 +41,7 @@ func (e *Env) GetRefreshSecret() string {
 	return e.dotenv.GetString("REFRESH_SECRET")
 }
 
+func (e *Env) GetRedisPass() string {
+	return e.dotenv.GetString("REDIS_PASSWORD")
+}
+

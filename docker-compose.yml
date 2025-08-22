@@ -3,12 +3,9 @@ services:
   backend:
     build:
       context: .
-      # Specifica il target stage da costruire. Il valore viene letto dalla variabile DOCKER_BUILD_TARGET.
       target: ${DOCKER_BUILD_TARGET:-production}
     ports:
       - "3000:3000"
-    # Monta il codice sorgente solo per lo stage di sviluppo,
-    # permettendo ad 'air' di rilevare le modifiche ai file.
     volumes:
       - ./:/app
     environment:
@@ -19,6 +16,8 @@ services:
       - DB_NAME=${DB_NAME}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - app-network
@@ -40,10 +39,22 @@ services:
     networks:
       - app-network
 
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
 
 volumes:
   db-data:
+    driver: local
+  redis-data:
     driver: local
