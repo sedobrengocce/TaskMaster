@@ -10,6 +10,7 @@ func (s *Server)RegisterRoutes() {
 	api.POST("/register", s.RegisterUserHandler)
 	api.POST("/login", s.LoginUserHandler)
 	api.POST("/refresh_token", s.RefreshTokenHandler)
+	api.POST("/logout", s.LogoutUserHandler)
 
 	// PUT
 
