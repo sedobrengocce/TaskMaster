@@ -143,6 +143,15 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to store refresh token"})
 	}
 
+	resp := map[string]string{
+		"jwt": tokenString,
+	}
+
+	xClientType := c.Request().Header.Get("X-Client-Type")
+	if xClientType == "mobile" {
+		resp["refresh_token"] = refreshTokenString
+	}
+
 	cookie := new(http.Cookie)
 	cookie.Name = "refresh_token"
 	cookie.Value = refreshTokenString
@@ -153,22 +162,41 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 	c.SetCookie(cookie)
 
 
-	return c.JSON(http.StatusOK, map[string]string{"jwt": tokenString})
+	return c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server)RefreshTokenHandler(c echo.Context) error {
-	cookie, err := c.Cookie("refresh_token")
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Missing refresh token"})
-	}
-
-	token, err := jwt.Parse(cookie.Value, func(token *jwt.Token) (interface{}, error) {
+func parseToken(tokenString string, secret []byte) (*jwt.Token, error) {
+	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, echo.NewHTTPError(http.StatusUnauthorized, "Invalid token signing method")
 		}
-		return s.RefreshSecret, nil
+		return secret, nil
 	})
+}
 
+func (s *Server)RefreshTokenHandler(c echo.Context) error {
+	var token *jwt.Token
+	var err error
+	isMobile := c.Request().Header.Get("X-Client-Type") == "mobile"
+
+	if isMobile {
+		var req struct {
+			RefreshToken string `json:"refresh_token" validate:"required"`
+		}
+		if err := c.Bind(&req); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+		}
+		if err := c.Validate(&req); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		token, err = parseToken(req.RefreshToken, s.RefreshSecret)
+	} else {
+		cookie, err := c.Cookie("refresh_token")
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Missing refresh token"})
+		}
+		token, err = parseToken(cookie.Value, s.RefreshSecret)
+	}
 	if err != nil || !token.Valid {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or expired refresh token"})
 	}
@@ -202,7 +230,7 @@ func (s *Server)RefreshTokenHandler(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Refresh token has expired"})
 	}
 
-	if !utils.CheckStringHash(cookie.Value, storedToken.TokenHash) {
+	if !utils.CheckStringHash(token.Raw, storedToken.TokenHash) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid refresh token"})
 	}
 
@@ -263,6 +291,16 @@ func (s *Server)RefreshTokenHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to store refresh token"})
 	}
+	
+	resp := map[string]string{
+		"jwt": newTokenString,
+	}
+
+	if isMobile {
+		resp["refresh_token"] = newRefreshTokenString
+		return c.JSON(http.StatusOK, resp)
+	}
+
 	newCookie := new(http.Cookie)
 	newCookie.Name = "refresh_token"
 	newCookie.Value = newRefreshTokenString
@@ -272,7 +310,7 @@ func (s *Server)RefreshTokenHandler(c echo.Context) error {
 	newCookie.SameSite = http.SameSiteStrictMode
 	c.SetCookie(newCookie)
 
-	return c.JSON(http.StatusOK, map[string]string{"jwt": newTokenString})
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server)LogoutUserHandler(c echo.Context) error {
@@ -316,15 +354,18 @@ func (s *Server)LogoutUserHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to revoke refresh tokens"})
 	}
+	
 
-	expiredCookie := new(http.Cookie)
-	expiredCookie.Name = "refresh_token"
-	expiredCookie.Value = ""
-	expiredCookie.Expires = time.Now().Add(-1 * time.Hour)
-	expiredCookie.HttpOnly = true
-	expiredCookie.Secure = true
-	expiredCookie.SameSite = http.SameSiteStrictMode
-	c.SetCookie(expiredCookie)
+	if c.Request().Header.Get("X-Client-Type") != "mobile" {
+		expiredCookie := new(http.Cookie)
+		expiredCookie.Name = "refresh_token"
+		expiredCookie.Value = ""
+		expiredCookie.Expires = time.Now().Add(-1 * time.Hour)
+		expiredCookie.HttpOnly = true
+		expiredCookie.Secure = true
+		expiredCookie.SameSite = http.SameSiteStrictMode
+		c.SetCookie(expiredCookie)
+	}
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Logged out successfully"})
 }
