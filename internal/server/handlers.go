@@ -11,6 +11,12 @@ import (
 	"github.com/sedobrengocce/TaskMaster/internal/utils"
 )
 
+type ClientType string
+const (
+	ClientTypeWeb ClientType = "web"
+	ClientTypeMobile ClientType = "mobile"
+)
+
 func (s *Server)HealthCheckHandler(c echo.Context) error {
 	response := struct {
 		Status  string `json:"status"`
@@ -68,6 +74,23 @@ type LoginUserRequest struct {
 	Password string `json:"password"`
 }
 
+func (s *Server)checkClientType(c echo.Context) ClientType {
+	xClientType := c.Request().Header.Get("X-Client-Type")
+	xClientSecret := c.Request().Header.Get("X-Client-Secret")
+	clientType := ClientTypeWeb
+	client, err := s.DB.GetClientByClientID(c.Request().Context(), xClientType)
+	if err != nil || client.ClientSecretHash.String == "" {
+		clientType = ClientTypeWeb
+	} else {
+		if utils.CheckStringHash(xClientSecret, client.ClientSecretHash.String) {
+			clientType = ClientTypeMobile
+		} else {
+			clientType = ClientTypeWeb
+		}
+	}
+	return clientType
+}
+
 func (s *Server)LoginUserHandler(c echo.Context) error {
 	var req LoginUserRequest
 	if err := c.Bind(&req); err != nil {
@@ -92,10 +115,8 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token ID"})
 	}
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"email": user.Email,
-		"id":    user.ID,
 		"iss": "taskmaster",
-		"sub": "user_auth",
+		"sub": user.ID,
 		"aud": "taskmaster_users",
 		"nbf": jwt.NewNumericDate(time.Now()),
 		"iat": jwt.NewNumericDate(time.Now()),
@@ -112,9 +133,8 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token ID"})
 	}
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id": user.ID,
+		"sub": user.ID,
 		"iss": "taskmaster",
-		"sub": "user_refresh",
 		"aud": "taskmaster_users",
 		"nbf": jwt.NewNumericDate(time.Now()),
 		"iat": jwt.NewNumericDate(time.Now()),
@@ -147,8 +167,8 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 		"jwt": tokenString,
 	}
 
-	xClientType := c.Request().Header.Get("X-Client-Type")
-	if xClientType == "mobile" {
+	clientType := s.checkClientType(c)
+	if clientType == ClientTypeMobile {
 		resp["refresh_token"] = refreshTokenString
 	}
 
@@ -165,19 +185,19 @@ func (s *Server)LoginUserHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-func parseToken(tokenString string, secret []byte) (*jwt.Token, error) {
+func (s *Server)parseToken(tokenString string) (*jwt.Token, error) {
 	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, echo.NewHTTPError(http.StatusUnauthorized, "Invalid token signing method")
 		}
-		return secret, nil
+		return s.RefreshSecret, nil
 	})
 }
 
 func (s *Server)RefreshTokenHandler(c echo.Context) error {
 	var token *jwt.Token
 	var err error
-	isMobile := c.Request().Header.Get("X-Client-Type") == "mobile"
+	isMobile := s.checkClientType(c) == ClientTypeMobile
 
 	if isMobile {
 		var req struct {
@@ -189,13 +209,13 @@ func (s *Server)RefreshTokenHandler(c echo.Context) error {
 		if err := c.Validate(&req); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
-		token, err = parseToken(req.RefreshToken, s.RefreshSecret)
+		token, err = s.parseToken(req.RefreshToken)
 	} else {
 		cookie, err := c.Cookie("refresh_token")
 		if err != nil {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Missing refresh token"})
 		}
-		token, err = parseToken(cookie.Value, s.RefreshSecret)
+		token, err = s.parseToken(cookie.Value)
 	}
 	if err != nil || !token.Valid {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or expired refresh token"})
@@ -244,10 +264,8 @@ func (s *Server)RefreshTokenHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token ID"})
 	}
 	newJwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"email": user.Email,
-		"id":    user.ID,
+		"sub":    user.ID,
 		"iss": "taskmaster",
-		"sub": "user_auth",
 		"aud": "taskmaster_users",
 		"nbf": jwt.NewNumericDate(time.Now()),
 		"iat": jwt.NewNumericDate(time.Now()),
@@ -264,9 +282,8 @@ func (s *Server)RefreshTokenHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token ID"})
 	}
 	newRefreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id": user.ID,
+		"sub": user.ID,
 		"iss": "taskmaster",
-		"sub": "user_refresh",
 		"aud": "taskmaster_users",
 		"nbf": jwt.NewNumericDate(time.Now()),
 		"iat": jwt.NewNumericDate(time.Now()),
@@ -354,9 +371,9 @@ func (s *Server)LogoutUserHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to revoke refresh tokens"})
 	}
-	
+	clientType := s.checkClientType(c)
 
-	if c.Request().Header.Get("X-Client-Type") != "mobile" {
+	if clientType == ClientTypeWeb {
 		expiredCookie := new(http.Cookie)
 		expiredCookie.Name = "refresh_token"
 		expiredCookie.Value = ""

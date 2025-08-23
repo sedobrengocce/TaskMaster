@@ -11,6 +11,48 @@ import (
 	"time"
 )
 
+type ClientsClientType string
+
+const (
+	ClientsClientTypePublic       ClientsClientType = "public"
+	ClientsClientTypeConfidential ClientsClientType = "confidential"
+)
+
+func (e *ClientsClientType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ClientsClientType(s)
+	case string:
+		*e = ClientsClientType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ClientsClientType: %T", src)
+	}
+	return nil
+}
+
+type NullClientsClientType struct {
+	ClientsClientType ClientsClientType
+	Valid             bool // Valid is true if ClientsClientType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullClientsClientType) Scan(value interface{}) error {
+	if value == nil {
+		ns.ClientsClientType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ClientsClientType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullClientsClientType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ClientsClientType), nil
+}
+
 type TasksTaskType string
 
 const (
@@ -51,6 +93,14 @@ func (ns NullTasksTaskType) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.TasksTaskType), nil
+}
+
+type Client struct {
+	ID               int64
+	ClientID         string
+	ClientSecretHash sql.NullString
+	ClientType       ClientsClientType
+	AppName          sql.NullString
 }
 
 type Project struct {

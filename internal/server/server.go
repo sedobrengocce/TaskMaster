@@ -18,9 +18,10 @@ type Server struct {
 	JWTSecret 		[]byte
 	RefreshSecret 	[]byte
 	Redis			*redis.Client
+	port			string
 }
 
-func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecret string) *Server {
+func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecret string, port string) *Server {
 	return &Server{
 		conn: conn,
 		DB:   db.New(conn),
@@ -28,6 +29,7 @@ func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecre
 		JWTSecret: []byte(jwtSecret),
 		RefreshSecret: []byte(refreshSecret),
 		Redis: redis,
+		port: port,
 	}
 }
 
@@ -68,6 +70,6 @@ func (s *Server) Run() error {
 
 	s.RegisterRoutes()
 
-	return s.echo.Start(":3000")
+	return s.echo.Start(":" + s.port)
 }
 

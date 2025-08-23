@@ -1,18 +1,22 @@
--- name: insertClient :exec
+-- name: InsertClient :exec
 INSERT INTO clients (
     client_id,
     client_secret_hash,
     client_type,
-    app_name,
+    app_name
 ) VALUES (
     ?, -- client_id
     ?, -- client_secret_hash
     ?, -- client_type
-    ?, -- app_name
-)
+    ? -- app_name
+);
 
-
--- name: removeClient :exec
-DELETE FROM clients
-WHERE client_id = ?
+-- name: GetClientByClientID :one
+SELECT
+    client_id,
+    client_secret_hash,
+    client_type,
+    app_name
+FROM clients
+WHERE client_id = ?;
 

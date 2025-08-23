@@ -45,3 +45,18 @@ func (e *Env) GetRedisPass() string {
 	return e.dotenv.GetString("REDIS_PASSWORD")
 }
 
+func (e *Env) GetPort() string {
+	return e.dotenv.GetString("PORT")
+}
+
+func (e *Env) GetMobileSecret() string {
+	return e.dotenv.GetString("MOBILE_CLIENT_SECRET")
+}
+
+func (e *Env) GetMobileClientID() string {
+	return e.dotenv.GetString("MOBILE_CLIENT_ID")
+}
+
+func (e *Env) GetFrontendURL() string {
+	return e.dotenv.GetString("FRONTEND_URL")
+}

@@ -30,7 +30,7 @@ func main() {
 		DB:       0,  
 	})
 
-	srv := server.NewServer(conn, rdb, Env.GetJWTSecret(), Env.GetRefreshSecret())
+	srv := server.NewServer(conn, rdb, Env.GetJWTSecret(), Env.GetRefreshSecret(), Env.GetPort())
 	if err := srv.Run(); err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
