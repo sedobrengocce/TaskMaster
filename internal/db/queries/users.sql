@@ -39,4 +39,4 @@ WHERE email = ? LIMIT 1;
 -- name: GetUserByTerm :many
 -- Recupera gli utenti che corrispondono a un termine di ricerca.
 SELECT * FROM users
-WHERE email ILIKE '%' || ? || '%'
+WHERE email LIKE CONCAT('%', ? , '%');

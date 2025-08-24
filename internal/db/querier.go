@@ -9,11 +9,15 @@ import (
 )
 
 type Querier interface {
+	CreateProject(ctx context.Context, arg CreateProjectParams) error
 	// Crea un nuovo utente e restituisce l'utente appena creato.
 	CreateUser(ctx context.Context, arg CreateUserParams) error
+	DeleteProject(ctx context.Context, id int32) error
 	// Elimina un utente e restituisce l'utente eliminato.
 	DeleteUser(ctx context.Context, id int32) error
 	GetClientByClientID(ctx context.Context, clientID string) (GetClientByClientIDRow, error)
+	GetProjectById(ctx context.Context, id int32) (Project, error)
+	GetProjectsByUserId(ctx context.Context, userID int32) ([]Project, error)
 	GetRefreshToken(ctx context.Context, userID int64) (GetRefreshTokenRow, error)
 	// Recupera un utente dal suo indirizzo email.
 	GetUserByEmail(ctx context.Context, email string) (User, error)
@@ -22,10 +26,11 @@ type Querier interface {
 	// Recupera un utente dal suo ID.
 	GetUserByID(ctx context.Context, id int32) (User, error)
 	// Recupera gli utenti che corrispondono a un termine di ricerca.
-	GetUserByTerm(ctx context.Context, dollar_1 interface{}) ([]User, error)
+	GetUserByTerm(ctx context.Context, concat interface{}) ([]User, error)
 	InsertClient(ctx context.Context, arg InsertClientParams) error
 	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error
 	RevokeRefreshToken(ctx context.Context, userID int64) error
+	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
 	// Aggiorna un utente esistente e restituisce l'utente aggiornato.
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 }

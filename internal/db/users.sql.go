@@ -102,12 +102,12 @@ func (q *Queries) GetUserByID(ctx context.Context, id int32) (User, error) {
 
 const getUserByTerm = `-- name: GetUserByTerm :many
 SELECT id, email, password_hash, created_at FROM users
-WHERE email ILIKE '%' || ? || '%'
+WHERE email LIKE CONCAT('%', ? , '%')
 `
 
 // Recupera gli utenti che corrispondono a un termine di ricerca.
-func (q *Queries) GetUserByTerm(ctx context.Context, dollar_1 interface{}) ([]User, error) {
-	rows, err := q.db.QueryContext(ctx, getUserByTerm, dollar_1)
+func (q *Queries) GetUserByTerm(ctx context.Context, concat interface{}) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, getUserByTerm, concat)
 	if err != nil {
 		return nil, err
 	}
