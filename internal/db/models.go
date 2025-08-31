@@ -122,6 +122,18 @@ type RefreshToken struct {
 	UserAgent string
 }
 
+type SharedProject struct {
+	ID               int32
+	ProjectID        int32
+	SharedWithUserID int32
+}
+
+type SharedTask struct {
+	ID               int32
+	TaskID           int32
+	SharedWithUserID int32
+}
+
 type Task struct {
 	ID              int32
 	ProjectID       sql.NullInt32

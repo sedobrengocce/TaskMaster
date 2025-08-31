@@ -6,19 +6,24 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
 	CreateProject(ctx context.Context, arg CreateProjectParams) error
+	CreateTask(ctx context.Context, arg CreateTaskParams) error
 	// Crea un nuovo utente e restituisce l'utente appena creato.
 	CreateUser(ctx context.Context, arg CreateUserParams) error
 	DeleteProject(ctx context.Context, id int32) error
+	DeleteTask(ctx context.Context, id int32) error
 	// Elimina un utente e restituisce l'utente eliminato.
 	DeleteUser(ctx context.Context, id int32) error
 	GetClientByClientID(ctx context.Context, clientID string) (GetClientByClientIDRow, error)
 	GetProjectById(ctx context.Context, id int32) (Project, error)
 	GetProjectsByUserId(ctx context.Context, userID int32) ([]Project, error)
 	GetRefreshToken(ctx context.Context, userID int64) (GetRefreshTokenRow, error)
+	GetTaskListByProjectId(ctx context.Context, projectID sql.NullInt32) ([]Task, error)
+	GetTasksByUserId(ctx context.Context, arg GetTasksByUserIdParams) ([]Task, error)
 	// Recupera un utente dal suo indirizzo email.
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	// Recupera un utente dal suo indirizzo email e dalla password.
@@ -30,7 +35,10 @@ type Querier interface {
 	InsertClient(ctx context.Context, arg InsertClientParams) error
 	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error
 	RevokeRefreshToken(ctx context.Context, userID int64) error
+	ShareTaskWithUser(ctx context.Context, arg ShareTaskWithUserParams) error
+	UnshareTaskWithUser(ctx context.Context, arg UnshareTaskWithUserParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
+	UpdateTask(ctx context.Context, arg UpdateTaskParams) error
 	// Aggiorna un utente esistente e restituisce l'utente aggiornato.
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 }

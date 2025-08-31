@@ -37,6 +37,11 @@ type RegisterUserRequest struct {
 	Password string `json:"password" validate:"required,min=8"`
 }
 
+type UserResponse struct {
+	ID    int32  `json:"id"`
+	Email string `json:"email"`
+}
+
 func (s *Server) RegisterUserHandler(c echo.Context) error {
 	var req RegisterUserRequest
 	if err := c.Bind(&req); err != nil {
@@ -68,7 +73,12 @@ func (s *Server) RegisterUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve user"})
 	}
 
-	return c.JSON(http.StatusOK, newUser)
+	resp := UserResponse{
+		ID:    newUser.ID,
+		Email: newUser.Email,
+	}
+
+	return c.JSON(http.StatusOK, resp)
 }
 
 type LoginUserRequest struct {
