@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -420,4 +421,75 @@ func (s *Server) CreateProject(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Project created successfully"})
 
+}
+
+func (s *Server) ListProjects(c echo.Context) error {
+	userID, err := strconv.ParseInt(c.QueryParam("user_id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user_id parameter"})
+	}
+
+	projects, err := s.DB.GetProjectsByUserId(c.Request().Context(), int32(userID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve projects"})
+	}
+
+	return c.JSON(http.StatusOK, projects)
+}
+
+func (s *Server) GetProject(c echo.Context) error {
+	projectID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
+	}
+
+	project, err := s.DB.GetProjectById(c.Request().Context(), int32(projectID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve project"})
+	}
+
+	return c.JSON(http.StatusOK, project)
+}
+
+type UpdateProjectRequest struct {
+	Name     string         `json:"name" validate:"required,min=3,max=100"`
+	ColorHex sql.NullString `json:"color_hex" validate:"len=7"`
+}
+
+func (s *Server) UpdateProject(c echo.Context) error {
+	var req UpdateProjectRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	projectID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
+	}
+	err = s.DB.UpdateProject(c.Request().Context(), db.UpdateProjectParams{
+		ID:       int32(projectID),
+		Name:     req.Name,
+		ColorHex: req.ColorHex,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update project"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Project updated successfully"})
+}
+
+func (s *Server) DeleteProject(c echo.Context) error {
+	projectID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
+	}
+
+	err = s.DB.DeleteProject(c.Request().Context(), int32(projectID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete project"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Project deleted successfully"})
 }
