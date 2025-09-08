@@ -439,7 +439,9 @@ func (s *Server) ListProjects(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user_id parameter"})
 	}
 
-	projects, err := s.DB.GetProjectsByUserId(c.Request().Context(), int32(userID))
+	projects, err := s.DB.GetProjectsByUserId(c.Request().Context(), db.GetProjectsByUserIdParams{
+		UserID: int32(userID),
+	})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve projects"})
 	}
@@ -502,4 +504,56 @@ func (s *Server) DeleteProject(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Project deleted successfully"})
+}
+
+type ShareRequest struct {
+	ID int32 `json:"id" validate:"required"`
+}
+
+func (s *Server) SharedProjectHandler(c echo.Context) error {
+	projectID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
+	}
+	var req ShareRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	err = s.DB.ShareProjectWithUser(c.Request().Context(), db.ShareProjectWithUserParams{
+		ProjectID:        int32(projectID),
+		SharedWithUserID: req.ID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to share project"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Project shared successfully"})
+}
+
+func (s *Server) UnshareProjectHandler(c echo.Context) error {
+	projectID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
+	}
+	var req ShareRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	err = s.DB.UnshareProjectWithUser(c.Request().Context(), db.UnshareProjectWithUserParams{
+		ProjectID:        int32(projectID),
+		SharedWithUserID: req.ID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to unshare project"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Project unshared successfully"})
 }

@@ -12,7 +12,7 @@ ORDER BY created_at DESC;
 SELECT tasks.id, tasks.project_id, tasks.title, tasks.description, tasks.task_type, tasks.priority, tasks.created_by_user_id, tasks.created_at
 FROM tasks
 LEFT JOIN shared_tasks ON tasks.id = shared_tasks.task_id
-WHERE tasks.created_by_user_id = ? OR shared_tasks.shared_with_user_id = ?
+WHERE tasks.created_by_user_id = sqlc.arg(user_id) OR shared_tasks.shared_with_user_id = sqlc.arg(user_id)
 ORDER BY tasks.created_at DESC;
 
 -- name: UpdateTask :exec

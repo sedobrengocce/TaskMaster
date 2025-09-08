@@ -52,11 +52,19 @@ func (q *Queries) GetProjectById(ctx context.Context, id int32) (Project, error)
 }
 
 const getProjectsByUserId = `-- name: GetProjectsByUserId :many
-SELECT id, user_id, name, color_hex, created_at FROM projects WHERE user_id = ? ORDER BY created_at DESC
+SELECT projects.id, projects.user_id, projects.name, projects.color_hex, projects.created_at 
+FROM projects 
+LEFT JOIN shared_projects sp ON projects.id = sp.project_id
+WHERE projects.user_id = ? OR sp.shared_with_user_id = ?
+ORDER BY created_at DESC
 `
 
-func (q *Queries) GetProjectsByUserId(ctx context.Context, userID int32) ([]Project, error) {
-	rows, err := q.db.QueryContext(ctx, getProjectsByUserId, userID)
+type GetProjectsByUserIdParams struct {
+	UserID int32
+}
+
+func (q *Queries) GetProjectsByUserId(ctx context.Context, arg GetProjectsByUserIdParams) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, getProjectsByUserId, arg.UserID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +90,34 @@ func (q *Queries) GetProjectsByUserId(ctx context.Context, userID int32) ([]Proj
 		return nil, err
 	}
 	return items, nil
+}
+
+const shareProjectWithUser = `-- name: ShareProjectWithUser :exec
+INSERT INTO shared_projects (project_id, shared_with_user_id) VALUES (?, ?)
+`
+
+type ShareProjectWithUserParams struct {
+	ProjectID        int32
+	SharedWithUserID int32
+}
+
+func (q *Queries) ShareProjectWithUser(ctx context.Context, arg ShareProjectWithUserParams) error {
+	_, err := q.db.ExecContext(ctx, shareProjectWithUser, arg.ProjectID, arg.SharedWithUserID)
+	return err
+}
+
+const unshareProjectWithUser = `-- name: UnshareProjectWithUser :exec
+DELETE FROM shared_projects WHERE project_id = ? AND shared_with_user_id = ?
+`
+
+type UnshareProjectWithUserParams struct {
+	ProjectID        int32
+	SharedWithUserID int32
+}
+
+func (q *Queries) UnshareProjectWithUser(ctx context.Context, arg UnshareProjectWithUserParams) error {
+	_, err := q.db.ExecContext(ctx, unshareProjectWithUser, arg.ProjectID, arg.SharedWithUserID)
+	return err
 }
 
 const updateProject = `-- name: UpdateProject :exec

@@ -93,12 +93,11 @@ ORDER BY tasks.created_at DESC
 `
 
 type GetTasksByUserIdParams struct {
-	CreatedByUserID  int32
-	SharedWithUserID int32
+	UserID int32
 }
 
 func (q *Queries) GetTasksByUserId(ctx context.Context, arg GetTasksByUserIdParams) ([]Task, error) {
-	rows, err := q.db.QueryContext(ctx, getTasksByUserId, arg.CreatedByUserID, arg.SharedWithUserID)
+	rows, err := q.db.QueryContext(ctx, getTasksByUserId, arg.UserID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
