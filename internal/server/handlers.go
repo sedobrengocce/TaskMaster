@@ -158,10 +158,7 @@ func (s *Server) LoginUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token"})
 	}
 
-	hashedRefreshToken, err := utils.HashString(refreshTokenString)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to hash refresh token"})
-	}
+	hashedRefreshToken := utils.HashToken(refreshTokenString)
 
 	err = s.DB.InsertRefreshToken(c.Request().Context(), db.InsertRefreshTokenParams{
 		UserID:    int64(user.ID),
@@ -246,7 +243,7 @@ func (s *Server) RefreshTokenHandler(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Refresh token has expired"})
 	}
 
-	userIDFloat, ok := claims["id"].(float64)
+	userIDFloat, ok := claims["sub"].(float64)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token claims"})
 	}
@@ -261,7 +258,7 @@ func (s *Server) RefreshTokenHandler(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Refresh token has expired"})
 	}
 
-	if !utils.CheckStringHash(token.Raw, storedToken.TokenHash) {
+	if !utils.CheckTokenHash(token.Raw, storedToken.TokenHash) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid refresh token"})
 	}
 
@@ -301,14 +298,11 @@ func (s *Server) RefreshTokenHandler(c echo.Context) error {
 		"jti": rjti,
 		"exp": jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 	})
-	newRefreshTokenString, err := newRefreshToken.SignedString([]byte(s.JWTSecret))
+	newRefreshTokenString, err := newRefreshToken.SignedString([]byte(s.RefreshSecret))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate refresh token"})
 	}
-	hashedNewRefreshToken, err := utils.HashString(newRefreshTokenString)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to hash refresh token"})
-	}
+	hashedNewRefreshToken := utils.HashToken(newRefreshTokenString)
 	err = s.DB.InsertRefreshToken(c.Request().Context(), db.InsertRefreshTokenParams{
 		UserID:    int64(user.ID),
 		TokenHash: hashedNewRefreshToken,
@@ -372,7 +366,7 @@ func (s *Server) LogoutUserHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, "Could not log out")
 	}
-	userIDFloat, ok := claims["id"].(float64)
+	userIDFloat, ok := claims["sub"].(float64)
 	if !ok {
 		return c.JSON(http.StatusBadRequest, "Invalid token claims")
 	}
@@ -405,9 +399,9 @@ func (s *Server) LogoutUserHandler(c echo.Context) error {
 }
 
 type CreateProjectRequest struct {
-	Name     string         `json:"name" validate:"required,min=3,max=100"`
-	UserID   int32          `json:"user_id" validate:"required"`
-	ColorHex sql.NullString `json:"color_hex" validate:"len=7"`
+	Name     string  `json:"name" validate:"required,min=3,max=100"`
+	UserID   int32   `json:"user_id" validate:"required"`
+	ColorHex *string `json:"color_hex" validate:"omitempty,len=7"`
 }
 
 func (s *Server) CreateProject(c echo.Context) error {
@@ -420,10 +414,15 @@ func (s *Server) CreateProject(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
+	colorHex := sql.NullString{}
+	if req.ColorHex != nil {
+		colorHex = sql.NullString{String: *req.ColorHex, Valid: true}
+	}
+
 	err := s.DB.CreateProject(c.Request().Context(), db.CreateProjectParams{
 		Name:     req.Name,
 		UserID:   req.UserID,
-		ColorHex: req.ColorHex,
+		ColorHex: colorHex,
 	})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create project"})
@@ -464,8 +463,8 @@ func (s *Server) GetProject(c echo.Context) error {
 }
 
 type UpdateProjectRequest struct {
-	Name     string         `json:"name" validate:"required,min=3,max=100"`
-	ColorHex sql.NullString `json:"color_hex" validate:"len=7"`
+	Name     string  `json:"name" validate:"required,min=3,max=100"`
+	ColorHex *string `json:"color_hex" validate:"omitempty,len=7"`
 }
 
 func (s *Server) UpdateProject(c echo.Context) error {
@@ -480,10 +479,14 @@ func (s *Server) UpdateProject(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
 	}
+	colorHex := sql.NullString{}
+	if req.ColorHex != nil {
+		colorHex = sql.NullString{String: *req.ColorHex, Valid: true}
+	}
 	err = s.DB.UpdateProject(c.Request().Context(), db.UpdateProjectParams{
 		ID:       int32(projectID),
 		Name:     req.Name,
-		ColorHex: req.ColorHex,
+		ColorHex: colorHex,
 	})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update project"})

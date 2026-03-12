@@ -13,7 +13,7 @@ import (
 
 type Server struct {
 	conn 			*sql.DB
-	DB 				*db.Queries
+	DB 				db.Querier
 	echo			*echo.Echo
 	JWTSecret 		[]byte
 	RefreshSecret 	[]byte
@@ -22,10 +22,12 @@ type Server struct {
 }
 
 func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecret string, port string) *Server {
+	e := echo.New()
+	e.Validator = NewValidator()
 	return &Server{
 		conn: conn,
 		DB:   db.New(conn),
-		echo: echo.New(),
+		echo: e,
 		JWTSecret: []byte(jwtSecret),
 		RefreshSecret: []byte(refreshSecret),
 		Redis: redis,

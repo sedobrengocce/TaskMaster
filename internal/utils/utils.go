@@ -2,6 +2,9 @@ package utils
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -20,6 +23,17 @@ func CheckStringHash(password, hash string) bool {
 		return false
 	}
 	return true
+}
+
+func HashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
+func CheckTokenHash(token, hash string) bool {
+	h := sha256.Sum256([]byte(token))
+	expected := hex.EncodeToString(h[:])
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(hash)) == 1
 }
 
 func GenerateRandomString(n int) (string, error) {
