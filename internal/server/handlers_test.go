@@ -608,3 +608,174 @@ func TestParseToken_InvalidToken(t *testing.T) {
 	_, err := ts.server.parseToken("invalid-token")
 	assert.Error(t, err)
 }
+
+// ── CreateTask ──────────────────────────────────────────────────
+
+func TestCreateTask_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("CreateTask", mock.Anything, db.CreateTaskParams{
+		ProjectID:       sql.NullInt32{},
+		Title:           "My Task",
+		Description:     sql.NullString{},
+		TaskType:        db.TasksTaskTypeSingle,
+		Priority:        sql.NullInt32{},
+		CreatedByUserID: 1,
+	}).Return(nil)
+
+	body := []byte(`{"title":"My Task","task_type":"single","user_id":1}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks", body)
+
+	err := ts.server.CreateTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestCreateTask_InvalidJSON(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{invalid}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks", body)
+
+	err := ts.server.CreateTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCreateTask_DBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("CreateTask", mock.Anything, mock.Anything).Return(errors.New("db error"))
+
+	body := []byte(`{"title":"My Task","task_type":"single","user_id":1}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks", body)
+
+	err := ts.server.CreateTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// ── ListTasksByProject ──────────────────────────────────────────
+
+func TestListTasksByProject_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	tasks := []db.Task{
+		{ID: 1, Title: "Task 1", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1},
+		{ID: 2, Title: "Task 2", TaskType: db.TasksTaskTypeRepetitive, CreatedByUserID: 1},
+	}
+	ts.mockDB.On("GetTaskListByProjectId", mock.Anything, sql.NullInt32{Int32: 1, Valid: true}).Return(tasks, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/1/tasks", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.ListTasksByProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []db.Task
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Len(t, resp, 2)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestListTasksByProject_InvalidID(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/abc/tasks", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.ListTasksByProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// ── ListTasksByUser ─────────────────────────────────────────────
+
+func TestListTasksByUser_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	tasks := []db.Task{
+		{ID: 1, Title: "Task 1", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1},
+		{ID: 2, Title: "Task 2", TaskType: db.TasksTaskTypeRepetitive, CreatedByUserID: 1},
+	}
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return(tasks, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/tasks?user_id=1", nil)
+
+	err := ts.server.ListTasksByUserHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []db.Task
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Len(t, resp, 2)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestListTasksByUser_InvalidUserID(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/tasks?user_id=abc", nil)
+
+	err := ts.server.ListTasksByUserHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// ── UpdateTask ──────────────────────────────────────────────────
+
+func TestUpdateTask_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("UpdateTask", mock.Anything, db.UpdateTaskParams{
+		ID:          1,
+		ProjectID:   sql.NullInt32{},
+		Title:       "Updated Task",
+		Description: sql.NullString{},
+		TaskType:    db.TasksTaskTypeSingle,
+		Priority:    sql.NullInt32{},
+	}).Return(nil)
+
+	body := []byte(`{"title":"Updated Task","task_type":"single"}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPut, "/api/tasks/1", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.UpdateTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	ts.mockDB.AssertExpectations(t)
+}
+
+// ── DeleteTask ──────────────────────────────────────────────────
+
+func TestDeleteTask_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("DeleteTask", mock.Anything, int32(1)).Return(nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.DeleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestDeleteTask_InvalidID(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/abc", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.DeleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}

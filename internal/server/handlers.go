@@ -560,3 +560,142 @@ func (s *Server) UnshareProjectHandler(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Project unshared successfully"})
 }
+
+type CreateTaskRequest struct {
+	ProjectID   *int32  `json:"project_id" validate:"omitempty"`
+	Title       string  `json:"title" validate:"required,min=1,max=255"`
+	Description *string `json:"description" validate:"omitempty"`
+	TaskType    string  `json:"task_type" validate:"required,oneof=single repetitive"`
+	Priority    *int32  `json:"priority" validate:"omitempty"`
+	UserID      int32   `json:"user_id" validate:"required"`
+}
+
+type UpdateTaskRequest struct {
+	ProjectID   *int32  `json:"project_id" validate:"omitempty"`
+	Title       string  `json:"title" validate:"required,min=1,max=255"`
+	Description *string `json:"description" validate:"omitempty"`
+	TaskType    string  `json:"task_type" validate:"required,oneof=single repetitive"`
+	Priority    *int32  `json:"priority" validate:"omitempty"`
+}
+
+func (s *Server) CreateTaskHandler(c echo.Context) error {
+	var req CreateTaskRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	projectID := sql.NullInt32{}
+	if req.ProjectID != nil {
+		projectID = sql.NullInt32{Int32: *req.ProjectID, Valid: true}
+	}
+	description := sql.NullString{}
+	if req.Description != nil {
+		description = sql.NullString{String: *req.Description, Valid: true}
+	}
+	priority := sql.NullInt32{}
+	if req.Priority != nil {
+		priority = sql.NullInt32{Int32: *req.Priority, Valid: true}
+	}
+
+	err := s.DB.CreateTask(c.Request().Context(), db.CreateTaskParams{
+		ProjectID:       projectID,
+		Title:           req.Title,
+		Description:     description,
+		TaskType:        db.TasksTaskType(req.TaskType),
+		Priority:        priority,
+		CreatedByUserID: req.UserID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task created successfully"})
+}
+
+func (s *Server) ListTasksByProjectHandler(c echo.Context) error {
+	projectID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
+	}
+
+	tasks, err := s.DB.GetTaskListByProjectId(c.Request().Context(), sql.NullInt32{Int32: int32(projectID), Valid: true})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve tasks"})
+	}
+
+	return c.JSON(http.StatusOK, tasks)
+}
+
+func (s *Server) ListTasksByUserHandler(c echo.Context) error {
+	userID, err := strconv.ParseInt(c.QueryParam("user_id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user_id parameter"})
+	}
+
+	tasks, err := s.DB.GetTasksByUserId(c.Request().Context(), db.GetTasksByUserIdParams{
+		UserID: int32(userID),
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve tasks"})
+	}
+
+	return c.JSON(http.StatusOK, tasks)
+}
+
+func (s *Server) UpdateTaskHandler(c echo.Context) error {
+	var req UpdateTaskRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	projectID := sql.NullInt32{}
+	if req.ProjectID != nil {
+		projectID = sql.NullInt32{Int32: *req.ProjectID, Valid: true}
+	}
+	description := sql.NullString{}
+	if req.Description != nil {
+		description = sql.NullString{String: *req.Description, Valid: true}
+	}
+	priority := sql.NullInt32{}
+	if req.Priority != nil {
+		priority = sql.NullInt32{Int32: *req.Priority, Valid: true}
+	}
+
+	err = s.DB.UpdateTask(c.Request().Context(), db.UpdateTaskParams{
+		ID:          int32(taskID),
+		ProjectID:   projectID,
+		Title:       req.Title,
+		Description: description,
+		TaskType:    db.TasksTaskType(req.TaskType),
+		Priority:    priority,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task updated successfully"})
+}
+
+func (s *Server) DeleteTaskHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	err = s.DB.DeleteTask(c.Request().Context(), int32(taskID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task deleted successfully"})
+}
