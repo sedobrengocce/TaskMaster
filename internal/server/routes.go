@@ -30,4 +30,9 @@ func (s *Server) RegisterRoutes() {
 	apiPrivate.GET("/projects/:id/tasks", s.ListTasksByProjectHandler)
 	apiPrivate.PUT("/tasks/:id", s.UpdateTaskHandler)
 	apiPrivate.DELETE("/tasks/:id", s.DeleteTaskHandler)
+
+	// Task Completions
+	apiPrivate.POST("/tasks/:id/complete", s.CompleteTaskHandler)
+	apiPrivate.DELETE("/tasks/:id/complete", s.UncompleteTaskHandler)
+	apiPrivate.GET("/tasks/:id/completions", s.GetTaskCompletionsHandler)
 }

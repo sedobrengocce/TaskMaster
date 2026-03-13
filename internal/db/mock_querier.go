@@ -142,3 +142,23 @@ func (m *MockQuerier) UpdateUser(ctx context.Context, arg UpdateUserParams) erro
 	args := m.Called(ctx, arg)
 	return args.Error(0)
 }
+
+func (m *MockQuerier) CompleteTask(ctx context.Context, arg CompleteTaskParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
+}
+
+func (m *MockQuerier) UncompleteTask(ctx context.Context, arg UncompleteTaskParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
+}
+
+func (m *MockQuerier) GetTaskCompletions(ctx context.Context, taskID int32) ([]TaskLog, error) {
+	args := m.Called(ctx, taskID)
+	return args.Get(0).([]TaskLog), args.Error(1)
+}
+
+func (m *MockQuerier) GetCompletionsForWeek(ctx context.Context, arg GetCompletionsForWeekParams) ([]TaskLog, error) {
+	args := m.Called(ctx, arg)
+	return args.Get(0).([]TaskLog), args.Error(1)
+}

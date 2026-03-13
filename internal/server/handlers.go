@@ -699,3 +699,72 @@ func (s *Server) DeleteTaskHandler(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Task deleted successfully"})
 }
+
+type CompleteTaskRequest struct {
+	UserID int32 `json:"user_id" validate:"required"`
+}
+
+func (s *Server) CompleteTaskHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	var req CompleteTaskRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	err = s.DB.CompleteTask(c.Request().Context(), db.CompleteTaskParams{
+		TaskID:            int32(taskID),
+		CompletedByUserID: req.UserID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to complete task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task completed successfully"})
+}
+
+func (s *Server) UncompleteTaskHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	userID, err := strconv.ParseInt(c.QueryParam("user_id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user_id parameter"})
+	}
+
+	err = s.DB.UncompleteTask(c.Request().Context(), db.UncompleteTaskParams{
+		TaskID:            int32(taskID),
+		CompletedByUserID: int32(userID),
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to uncomplete task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task uncompleted successfully"})
+}
+
+func (s *Server) GetTaskCompletionsHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	completions, err := s.DB.GetTaskCompletions(c.Request().Context(), int32(taskID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve completions"})
+	}
+
+	if completions == nil {
+		completions = []db.TaskLog{}
+	}
+
+	return c.JSON(http.StatusOK, completions)
+}

@@ -29,4 +29,21 @@ INSERT INTO shared_tasks (task_id, shared_with_user_id) VALUES (?, ?);
 -- name: UnshareTaskWithUser :exec
 DELETE FROM shared_tasks WHERE task_id = ? AND shared_with_user_id = ?;
 
+-- name: CompleteTask :exec
+INSERT INTO task_logs (task_id, completed_by_user_id) VALUES (?, ?);
 
+-- name: UncompleteTask :exec
+DELETE FROM task_logs
+WHERE task_id = ? AND completed_by_user_id = ? AND DATE(completed_at) = CURDATE();
+
+-- name: GetTaskCompletions :many
+SELECT id, task_id, completed_by_user_id, completed_at
+FROM task_logs WHERE task_id = ? ORDER BY completed_at DESC;
+
+-- name: GetCompletionsForWeek :many
+SELECT id, task_id, completed_by_user_id, completed_at
+FROM task_logs
+WHERE completed_by_user_id = sqlc.arg(user_id)
+  AND completed_at >= sqlc.arg(start_date)
+  AND completed_at < sqlc.arg(end_date)
+ORDER BY completed_at DESC;

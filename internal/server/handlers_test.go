@@ -779,3 +779,174 @@ func TestDeleteTask_InvalidID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+// ── CompleteTask ────────────────────────────────────────────────
+
+func TestCompleteTask_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("CompleteTask", mock.Anything, db.CompleteTaskParams{
+		TaskID:            1,
+		CompletedByUserID: 2,
+	}).Return(nil)
+
+	body := []byte(`{"user_id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.CompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestCompleteTask_InvalidTaskID(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{"user_id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/abc/complete", body)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.CompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCompleteTask_InvalidJSON(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{invalid}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.CompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCompleteTask_DBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("CompleteTask", mock.Anything, mock.Anything).Return(errors.New("db error"))
+
+	body := []byte(`{"user_id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.CompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// ── UncompleteTask ──────────────────────────────────────────────
+
+func TestUncompleteTask_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("UncompleteTask", mock.Anything, db.UncompleteTaskParams{
+		TaskID:            1,
+		CompletedByUserID: 2,
+	}).Return(nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/complete?user_id=2", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.UncompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestUncompleteTask_InvalidTaskID(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/abc/complete?user_id=2", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.UncompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUncompleteTask_InvalidUserID(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/complete?user_id=abc", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.UncompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUncompleteTask_DBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("UncompleteTask", mock.Anything, mock.Anything).Return(errors.New("db error"))
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/complete?user_id=2", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.UncompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// ── GetTaskCompletions ──────────────────────────────────────────
+
+func TestGetTaskCompletions_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	completions := []db.TaskLog{
+		{ID: 1, TaskID: 1, CompletedByUserID: 2},
+		{ID: 2, TaskID: 1, CompletedByUserID: 3},
+	}
+	ts.mockDB.On("GetTaskCompletions", mock.Anything, int32(1)).Return(completions, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/tasks/1/completions", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.GetTaskCompletionsHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []db.TaskLog
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Len(t, resp, 2)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestGetTaskCompletions_InvalidID(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/tasks/abc/completions", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.GetTaskCompletionsHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestGetTaskCompletions_DBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTaskCompletions", mock.Anything, int32(1)).Return([]db.TaskLog{}, errors.New("db error"))
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/tasks/1/completions", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.GetTaskCompletionsHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
