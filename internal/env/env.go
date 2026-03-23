@@ -60,3 +60,7 @@ func (e *Env) GetMobileClientID() string {
 func (e *Env) GetFrontendURL() string {
 	return e.dotenv.GetString("FRONTEND_URL")
 }
+
+func (e *Env) GetCORSAllowedOrigins() string {
+	return e.dotenv.GetString("CORS_ALLOWED_ORIGINS")
+}

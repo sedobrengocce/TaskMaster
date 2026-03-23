@@ -49,6 +49,7 @@ func newTestServer(t *testing.T) *testServer {
 		JWTSecret:     []byte(testJWTSecret),
 		RefreshSecret: []byte(testRefreshSecret),
 		Redis:         redisClient,
+		CORSOrigins:   []string{"*"},
 	}
 
 	return &testServer{

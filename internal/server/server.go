@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
@@ -19,9 +20,17 @@ type Server struct {
 	RefreshSecret 	[]byte
 	Redis			*redis.Client
 	port			string
+	CORSOrigins		[]string
 }
 
-func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecret string, port string) *Server {
+func parseCORSOrigins(s string) []string {
+	if s == "" {
+		return []string{"*"}
+	}
+	return strings.Split(s, ",")
+}
+
+func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecret string, port string, corsOrigins string) *Server {
 	e := echo.New()
 	e.Validator = NewValidator()
 	return &Server{
@@ -32,6 +41,7 @@ func NewServer(conn *sql.DB, redis *redis.Client, jwtSecret string, refreshSecre
 		RefreshSecret: []byte(refreshSecret),
 		Redis: redis,
 		port: port,
+		CORSOrigins: parseCORSOrigins(corsOrigins),
 	}
 }
 
@@ -40,8 +50,10 @@ func (s *Server) Run() error {
 	s.echo.Use(middleware.Recover()) 
 
 	s.echo.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"}, // Al momento permette tutte le origini, ma in produzione dovresti specificare i domini consentiti in una file di configurazione yml o toml
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
+		AllowOrigins: s.CORSOrigins,
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+		AllowHeaders: []string{echo.HeaderAuthorization, echo.HeaderContentType, "X-CSRF-Token"},
+		MaxAge:       3600,
 	}))
 
 	s.echo.Use(echojwt.WithConfig(echojwt.Config{
