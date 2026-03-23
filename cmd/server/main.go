@@ -17,7 +17,7 @@ func main() {
 		log.Fatalf("Error reading environment variables: %v", err)
 	}
 
-	dbUrl := "mysql://" + Env.GetDBUser() + ":" + Env.GetDBPassword() + "@tcp(db:3306)/" + Env.GetDBName() + "?parseTime=true"
+	dbUrl := Env.GetDBUser() + ":" + Env.GetDBPassword() + "@tcp(db:3306)/" + Env.GetDBName() + "?parseTime=true"
 	conn, err := sql.Open("mysql", dbUrl)
 	if err != nil {
 		log.Fatalf("Error connecting to the database: %v", err)

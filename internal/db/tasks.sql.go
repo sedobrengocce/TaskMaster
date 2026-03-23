@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const completeTask = `-- name: CompleteTask :exec
@@ -24,7 +25,7 @@ func (q *Queries) CompleteTask(ctx context.Context, arg CompleteTaskParams) erro
 	return err
 }
 
-const createTask = `-- name: CreateTask :exec
+const createTask = `-- name: CreateTask :execresult
 INSERT INTO tasks (project_id, title, description, task_type, priority, created_by_user_id) 
 VALUES (?, ?, ?, ?, ?, ?)
 `
@@ -38,8 +39,8 @@ type CreateTaskParams struct {
 	CreatedByUserID int32
 }
 
-func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) error {
-	_, err := q.db.ExecContext(ctx, createTask,
+func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createTask,
 		arg.ProjectID,
 		arg.Title,
 		arg.Description,
@@ -47,7 +48,6 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) error {
 		arg.Priority,
 		arg.CreatedByUserID,
 	)
-	return err
 }
 
 const deleteTask = `-- name: DeleteTask :exec
@@ -102,6 +102,52 @@ func (q *Queries) GetCompletionsForWeek(ctx context.Context, arg GetCompletionsF
 	return items, nil
 }
 
+const getScheduledTasksForDateRange = `-- name: GetScheduledTasksForDateRange :many
+SELECT td.id, td.task_id, td.date
+FROM task_dates td
+WHERE td.task_id IN (
+    SELECT t.id FROM tasks t
+    LEFT JOIN shared_tasks st ON t.id = st.task_id
+    WHERE t.created_by_user_id = ? OR st.shared_with_user_id = ?
+)
+AND td.date >= ? AND td.date <= ?
+ORDER BY td.date ASC
+`
+
+type GetScheduledTasksForDateRangeParams struct {
+	UserID    int32
+	StartDate time.Time
+	EndDate   time.Time
+}
+
+func (q *Queries) GetScheduledTasksForDateRange(ctx context.Context, arg GetScheduledTasksForDateRangeParams) ([]TaskDate, error) {
+	rows, err := q.db.QueryContext(ctx, getScheduledTasksForDateRange,
+		arg.UserID,
+		arg.UserID,
+		arg.StartDate,
+		arg.EndDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TaskDate
+	for rows.Next() {
+		var i TaskDate
+		if err := rows.Scan(&i.ID, &i.TaskID, &i.Date); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTaskById = `-- name: GetTaskById :one
 SELECT id, project_id, title, description, task_type, priority, created_by_user_id, created_at
 FROM tasks WHERE id = ?
@@ -143,6 +189,33 @@ func (q *Queries) GetTaskCompletions(ctx context.Context, taskID int32) ([]TaskL
 			&i.CompletedByUserID,
 			&i.CompletedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTaskDates = `-- name: GetTaskDates :many
+SELECT id, task_id, date FROM task_dates WHERE task_id = ? ORDER BY date ASC
+`
+
+func (q *Queries) GetTaskDates(ctx context.Context, taskID int32) ([]TaskDate, error) {
+	rows, err := q.db.QueryContext(ctx, getTaskDates, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TaskDate
+	for rows.Next() {
+		var i TaskDate
+		if err := rows.Scan(&i.ID, &i.TaskID, &i.Date); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -239,6 +312,51 @@ func (q *Queries) GetTasksByUserId(ctx context.Context, arg GetTasksByUserIdPara
 	return items, nil
 }
 
+const getUnscheduledTasksByUserId = `-- name: GetUnscheduledTasksByUserId :many
+SELECT t.id, t.project_id, t.title, t.description, t.task_type, t.priority, t.created_by_user_id, t.created_at
+FROM tasks t
+LEFT JOIN shared_tasks st ON t.id = st.task_id
+WHERE (t.created_by_user_id = ? OR st.shared_with_user_id = ?)
+  AND t.id NOT IN (SELECT td.task_id FROM task_dates td)
+ORDER BY t.created_at DESC
+`
+
+type GetUnscheduledTasksByUserIdParams struct {
+	UserID int32
+}
+
+func (q *Queries) GetUnscheduledTasksByUserId(ctx context.Context, arg GetUnscheduledTasksByUserIdParams) ([]Task, error) {
+	rows, err := q.db.QueryContext(ctx, getUnscheduledTasksByUserId, arg.UserID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Task
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Description,
+			&i.TaskType,
+			&i.Priority,
+			&i.CreatedByUserID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const isTaskSharedWithUser = `-- name: IsTaskSharedWithUser :one
 SELECT EXISTS(SELECT 1 FROM shared_tasks WHERE task_id = ? AND shared_with_user_id = ?) AS is_shared
 `
@@ -253,6 +371,20 @@ func (q *Queries) IsTaskSharedWithUser(ctx context.Context, arg IsTaskSharedWith
 	var is_shared bool
 	err := row.Scan(&is_shared)
 	return is_shared, err
+}
+
+const scheduleTask = `-- name: ScheduleTask :exec
+INSERT INTO task_dates (task_id, date) VALUES (?, ?)
+`
+
+type ScheduleTaskParams struct {
+	TaskID int32
+	Date   time.Time
+}
+
+func (q *Queries) ScheduleTask(ctx context.Context, arg ScheduleTaskParams) error {
+	_, err := q.db.ExecContext(ctx, scheduleTask, arg.TaskID, arg.Date)
+	return err
 }
 
 const shareTaskWithUser = `-- name: ShareTaskWithUser :exec
@@ -281,6 +413,20 @@ type UncompleteTaskParams struct {
 
 func (q *Queries) UncompleteTask(ctx context.Context, arg UncompleteTaskParams) error {
 	_, err := q.db.ExecContext(ctx, uncompleteTask, arg.TaskID, arg.CompletedByUserID)
+	return err
+}
+
+const unscheduleTask = `-- name: UnscheduleTask :exec
+DELETE FROM task_dates WHERE task_id = ? AND date = ?
+`
+
+type UnscheduleTaskParams struct {
+	TaskID int32
+	Date   time.Time
+}
+
+func (q *Queries) UnscheduleTask(ctx context.Context, arg UnscheduleTaskParams) error {
+	_, err := q.db.ExecContext(ctx, unscheduleTask, arg.TaskID, arg.Date)
 	return err
 }
 
@@ -322,5 +468,19 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) error {
 		arg.Priority,
 		arg.ID,
 	)
+	return err
+}
+
+const updateTaskProject = `-- name: UpdateTaskProject :exec
+UPDATE tasks SET project_id = ? WHERE id = ?
+`
+
+type UpdateTaskProjectParams struct {
+	ProjectID sql.NullInt32
+	ID        int32
+}
+
+func (q *Queries) UpdateTaskProject(ctx context.Context, arg UpdateTaskProjectParams) error {
+	_, err := q.db.ExecContext(ctx, updateTaskProject, arg.ProjectID, arg.ID)
 	return err
 }

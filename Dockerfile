@@ -1,5 +1,5 @@
-# Base stage for Node.js and Go dependencies
-FROM golang:1.24-alpine AS base
+# Base stage for Go dependencies
+FROM golang:1.26-alpine AS base
 WORKDIR /app
 
 # Install build dependencies
@@ -19,7 +19,10 @@ RUN go install github.com/air-verse/air@latest
 # Copy dependency files first
 COPY go.* ./
 COPY Makefile ./
-COPY .env ./
+
+# Copy .env if it exists
+RUN --mount=type=bind,source=.,target=/context \
+    if [ -f /context/.env ]; then cp /context/.env .; fi
 
 # Install dependencies and create directories
 RUN make install-tools
@@ -37,6 +40,10 @@ FROM base AS builder
 COPY go.* ./
 COPY Makefile ./
 
+# Copy .env if it exists
+RUN --mount=type=bind,source=.,target=/context \
+    if [ -f /context/.env ]; then cp /context/.env .; fi
+
 # Install dependencies
 RUN make install-tools
 
@@ -52,6 +59,7 @@ WORKDIR /app
 
 # Copy built artifacts
 COPY --from=builder /app/api .
+COPY --from=builder /app/.env* ./
 
 EXPOSE 3000
 CMD ["./taskmaster"]

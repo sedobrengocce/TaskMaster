@@ -24,7 +24,7 @@ WHERE user_id = ?
 `
 
 type GetRefreshTokenRow struct {
-	UserID    int64
+	UserID    int32
 	TokenHash string
 	ExpiresAt time.Time
 	CreatedAt sql.NullTime
@@ -32,7 +32,7 @@ type GetRefreshTokenRow struct {
 	UserAgent string
 }
 
-func (q *Queries) GetRefreshToken(ctx context.Context, userID int64) (GetRefreshTokenRow, error) {
+func (q *Queries) GetRefreshToken(ctx context.Context, userID int32) (GetRefreshTokenRow, error) {
 	row := q.db.QueryRowContext(ctx, getRefreshToken, userID)
 	var i GetRefreshTokenRow
 	err := row.Scan(
@@ -72,7 +72,7 @@ ON DUPLICATE KEY UPDATE
 `
 
 type InsertRefreshTokenParams struct {
-	UserID    int64
+	UserID    int32
 	TokenHash string
 	ExpiresAt time.Time
 	IpAddress string
@@ -97,7 +97,7 @@ SET
 WHERE user_id = ?
 `
 
-func (q *Queries) RevokeRefreshToken(ctx context.Context, userID int64) error {
+func (q *Queries) RevokeRefreshToken(ctx context.Context, userID int32) error {
 	_, err := q.db.ExecContext(ctx, revokeRefreshToken, userID)
 	return err
 }

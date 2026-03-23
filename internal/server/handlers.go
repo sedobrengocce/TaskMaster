@@ -2,11 +2,15 @@ package server
 
 import (
 	"database/sql"
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-playground/validator/v10"
+	"github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/sedobrengocce/TaskMaster/internal/db"
@@ -93,7 +97,24 @@ func (s *Server) RegisterUserHandler(c echo.Context) error {
 	}
 
 	if err := c.Validate(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			msgs := make([]string, 0, len(ve))
+			for _, fe := range ve {
+				switch fe.Field() {
+				case "Email":
+					msgs = append(msgs, "valid email is required")
+				case "Password":
+					switch fe.Tag() {
+					case "required":
+						msgs = append(msgs, "password is required")
+					case "min":
+						msgs = append(msgs, "password must be at least 8 characters")
+					}
+				}
+			}
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": strings.Join(msgs, "; ")})
+		}
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
 	hashedPassword, err := utils.HashString(req.Password)
@@ -106,9 +127,11 @@ func (s *Server) RegisterUserHandler(c echo.Context) error {
 		PasswordHash: hashedPassword,
 	})
 	if err != nil {
-		if err.Error() == "user already exists" {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "User already exists"})
 		}
+		log.Printf("Failed to create user: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create user"})
 	}
 
@@ -154,7 +177,24 @@ func (s *Server) LoginUserHandler(c echo.Context) error {
 	}
 
 	if err := c.Validate(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			msgs := make([]string, 0, len(ve))
+			for _, fe := range ve {
+				switch fe.Field() {
+				case "Email":
+					msgs = append(msgs, "valid email is required")
+				case "Password":
+					switch fe.Tag() {
+					case "required":
+						msgs = append(msgs, "password is required")
+					case "min":
+						msgs = append(msgs, "password must be at least 8 characters")
+					}
+				}
+			}
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": strings.Join(msgs, "; ")})
+		}
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
 	user, err := s.DB.GetUserByEmail(c.Request().Context(), req.Email)
@@ -205,7 +245,7 @@ func (s *Server) LoginUserHandler(c echo.Context) error {
 	hashedRefreshToken := utils.HashToken(refreshTokenString)
 
 	err = s.DB.InsertRefreshToken(c.Request().Context(), db.InsertRefreshTokenParams{
-		UserID:    int64(user.ID),
+		UserID:    user.ID,
 		TokenHash: hashedRefreshToken,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		IpAddress: c.RealIP(),
@@ -291,7 +331,7 @@ func (s *Server) RefreshTokenHandler(c echo.Context) error {
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token claims"})
 	}
-	userID := int64(userIDFloat)
+	userID := int32(userIDFloat)
 
 	storedToken, err := s.DB.GetRefreshToken(c.Request().Context(), userID)
 	if err != nil {
@@ -348,7 +388,7 @@ func (s *Server) RefreshTokenHandler(c echo.Context) error {
 	}
 	hashedNewRefreshToken := utils.HashToken(newRefreshTokenString)
 	err = s.DB.InsertRefreshToken(c.Request().Context(), db.InsertRefreshTokenParams{
-		UserID:    int64(user.ID),
+		UserID:    user.ID,
 		TokenHash: hashedNewRefreshToken,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		IpAddress: c.RealIP(),
@@ -414,9 +454,9 @@ func (s *Server) LogoutUserHandler(c echo.Context) error {
 	if !ok {
 		return c.JSON(http.StatusBadRequest, "Invalid token claims")
 	}
-	userID := int64(userIDFloat)
+	logoutUserID := int32(userIDFloat)
 
-	err = s.DB.RevokeRefreshToken(c.Request().Context(), userID)
+	err = s.DB.RevokeRefreshToken(c.Request().Context(), logoutUserID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to revoke refresh tokens"})
 	}
@@ -442,6 +482,32 @@ func (s *Server) LogoutUserHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+type ProjectResponse struct {
+	ID        int32  `json:"ID"`
+	UserID    int32  `json:"UserID"`
+	Name      string `json:"Name"`
+	ColorHex  string `json:"ColorHex"`
+	CreatedAt string `json:"CreatedAt"`
+}
+
+func toProjectResponse(p db.Project) ProjectResponse {
+	colorHex := ""
+	if p.ColorHex.Valid {
+		colorHex = p.ColorHex.String
+	}
+	createdAt := ""
+	if p.CreatedAt.Valid {
+		createdAt = p.CreatedAt.Time.Format(time.RFC3339)
+	}
+	return ProjectResponse{
+		ID:        p.ID,
+		UserID:    p.UserID,
+		Name:      p.Name,
+		ColorHex:  colorHex,
+		CreatedAt: createdAt,
+	}
+}
+
 type CreateProjectRequest struct {
 	Name     string  `json:"name" validate:"required,min=3,max=100"`
 	UserID   int32   `json:"user_id" validate:"required"`
@@ -463,7 +529,7 @@ func (s *Server) CreateProject(c echo.Context) error {
 		colorHex = sql.NullString{String: *req.ColorHex, Valid: true}
 	}
 
-	err := s.DB.CreateProject(c.Request().Context(), db.CreateProjectParams{
+	result, err := s.DB.CreateProject(c.Request().Context(), db.CreateProjectParams{
 		Name:     req.Name,
 		UserID:   req.UserID,
 		ColorHex: colorHex,
@@ -472,7 +538,13 @@ func (s *Server) CreateProject(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create project"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"message": "Project created successfully"})
+	id, _ := result.LastInsertId()
+	project, err := s.DB.GetProjectById(c.Request().Context(), int32(id))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve created project"})
+	}
+
+	return c.JSON(http.StatusCreated, toProjectResponse(project))
 
 }
 
@@ -489,7 +561,11 @@ func (s *Server) ListProjects(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve projects"})
 	}
 
-	return c.JSON(http.StatusOK, projects)
+	resp := make([]ProjectResponse, len(projects))
+	for i, p := range projects {
+		resp[i] = toProjectResponse(p)
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) GetProject(c echo.Context) error {
@@ -515,7 +591,7 @@ func (s *Server) GetProject(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve project"})
 	}
 
-	return c.JSON(http.StatusOK, project)
+	return c.JSON(http.StatusOK, toProjectResponse(project))
 }
 
 type UpdateProjectRequest struct {
@@ -620,11 +696,19 @@ func (s *Server) SharedProjectHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
+	if req.ID == authUserID {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Cannot share a project with yourself"})
+	}
+
 	err = s.DB.ShareProjectWithUser(c.Request().Context(), db.ShareProjectWithUserParams{
 		ProjectID:        int32(projectID),
 		SharedWithUserID: req.ID,
 	})
 	if err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "Project is already shared with this user"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to share project"})
 	}
 
@@ -742,6 +826,48 @@ func (s *Server) UnshareTaskHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Task unshared successfully"})
 }
 
+type TaskResponse struct {
+	ID              int32   `json:"ID"`
+	ProjectID       *int32  `json:"ProjectID"`
+	Title           string  `json:"Title"`
+	Description     *string `json:"Description"`
+	TaskType        string  `json:"TaskType"`
+	Priority        *int32  `json:"Priority"`
+	CreatedByUserID int32   `json:"CreatedByUserID"`
+	CreatedAt       *string `json:"CreatedAt"`
+}
+
+func toTaskResponse(t db.Task) TaskResponse {
+	r := TaskResponse{
+		ID:              t.ID,
+		Title:           t.Title,
+		TaskType:        string(t.TaskType),
+		CreatedByUserID: t.CreatedByUserID,
+	}
+	if t.ProjectID.Valid {
+		r.ProjectID = &t.ProjectID.Int32
+	}
+	if t.Description.Valid {
+		r.Description = &t.Description.String
+	}
+	if t.Priority.Valid {
+		r.Priority = &t.Priority.Int32
+	}
+	if t.CreatedAt.Valid {
+		s := t.CreatedAt.Time.Format(time.RFC3339)
+		r.CreatedAt = &s
+	}
+	return r
+}
+
+func toTaskResponses(tasks []db.Task) []TaskResponse {
+	resp := make([]TaskResponse, len(tasks))
+	for i, t := range tasks {
+		resp[i] = toTaskResponse(t)
+	}
+	return resp
+}
+
 type CreateTaskRequest struct {
 	ProjectID   *int32  `json:"project_id" validate:"omitempty"`
 	Title       string  `json:"title" validate:"required,min=1,max=255"`
@@ -781,7 +907,7 @@ func (s *Server) CreateTaskHandler(c echo.Context) error {
 		priority = sql.NullInt32{Int32: *req.Priority, Valid: true}
 	}
 
-	err := s.DB.CreateTask(c.Request().Context(), db.CreateTaskParams{
+	result, err := s.DB.CreateTask(c.Request().Context(), db.CreateTaskParams{
 		ProjectID:       projectID,
 		Title:           req.Title,
 		Description:     description,
@@ -793,7 +919,13 @@ func (s *Server) CreateTaskHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create task"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"message": "Task created successfully"})
+	id, _ := result.LastInsertId()
+	task, err := s.DB.GetTaskById(c.Request().Context(), int32(id))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve created task"})
+	}
+
+	return c.JSON(http.StatusCreated, toTaskResponse(task))
 }
 
 func (s *Server) ListTasksByProjectHandler(c echo.Context) error {
@@ -819,7 +951,7 @@ func (s *Server) ListTasksByProjectHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve tasks"})
 	}
 
-	return c.JSON(http.StatusOK, tasks)
+	return c.JSON(http.StatusOK, toTaskResponses(tasks))
 }
 
 func (s *Server) ListTasksByUserHandler(c echo.Context) error {
@@ -828,14 +960,35 @@ func (s *Server) ListTasksByUserHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user_id parameter"})
 	}
 
-	tasks, err := s.DB.GetTasksByUserId(c.Request().Context(), db.GetTasksByUserIdParams{
-		UserID: int32(userID),
-	})
+	var tasks []db.Task
+	if c.QueryParam("exclude_scheduled") == "true" {
+		tasks, err = s.DB.GetUnscheduledTasksByUserId(c.Request().Context(), db.GetUnscheduledTasksByUserIdParams{
+			UserID: int32(userID),
+		})
+	} else {
+		tasks, err = s.DB.GetTasksByUserId(c.Request().Context(), db.GetTasksByUserIdParams{
+			UserID: int32(userID),
+		})
+	}
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve tasks"})
 	}
 
-	return c.JSON(http.StatusOK, tasks)
+	if priorityParam := c.QueryParam("priority"); priorityParam != "" {
+		p, err := strconv.ParseInt(priorityParam, 10, 32)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid priority parameter"})
+		}
+		filtered := make([]db.Task, 0)
+		for _, t := range tasks {
+			if t.Priority.Valid && t.Priority.Int32 == int32(p) {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
+	}
+
+	return c.JSON(http.StatusOK, toTaskResponses(tasks))
 }
 
 func (s *Server) UpdateTaskHandler(c echo.Context) error {
@@ -986,6 +1139,7 @@ type WeeklyTaskDay struct {
 	Date      string `json:"date"`
 	Weekday   string `json:"weekday"`
 	Completed bool   `json:"completed"`
+	Scheduled bool   `json:"scheduled"`
 }
 
 type WeeklyTask struct {
@@ -1025,11 +1179,25 @@ func (s *Server) GetWeeklyViewHandler(c echo.Context) error {
 	monday := time.Date(refDate.Year(), refDate.Month(), refDate.Day()-offset, 0, 0, 0, 0, time.UTC)
 	sunday := monday.AddDate(0, 0, 7)
 
-	tasks, err := s.DB.GetTasksByUserId(c.Request().Context(), db.GetTasksByUserIdParams{
-		UserID: authUserID,
+	scheduledDates, err := s.DB.GetScheduledTasksForDateRange(c.Request().Context(), db.GetScheduledTasksForDateRangeParams{
+		UserID:    authUserID,
+		StartDate: monday,
+		EndDate:   monday.AddDate(0, 0, 6),
 	})
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve tasks"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve scheduled tasks"})
+	}
+
+	// Build map: taskID -> set of scheduled date strings
+	scheduleMap := make(map[int32]map[string]bool)
+	taskIDs := make(map[int32]bool)
+	for _, td := range scheduledDates {
+		dateStr := td.Date.Format("2006-01-02")
+		if scheduleMap[td.TaskID] == nil {
+			scheduleMap[td.TaskID] = make(map[string]bool)
+		}
+		scheduleMap[td.TaskID][dateStr] = true
+		taskIDs[td.TaskID] = true
 	}
 
 	completions, err := s.DB.GetCompletionsForWeek(c.Request().Context(), db.GetCompletionsForWeekParams{
@@ -1052,8 +1220,12 @@ func (s *Server) GetWeeklyViewHandler(c echo.Context) error {
 		}
 	}
 
-	weeklyTasks := make([]WeeklyTask, 0, len(tasks))
-	for _, t := range tasks {
+	weeklyTasks := make([]WeeklyTask, 0, len(taskIDs))
+	for taskID := range taskIDs {
+		t, err := s.DB.GetTaskById(c.Request().Context(), taskID)
+		if err != nil {
+			continue
+		}
 		wt := WeeklyTask{
 			ID:       t.ID,
 			Title:    t.Title,
@@ -1069,14 +1241,35 @@ func (s *Server) GetWeeklyViewHandler(c echo.Context) error {
 			wt.ProjectID = &t.ProjectID.Int32
 		}
 
+		// Count completions for this task in the week
+		completionCount := len(completionMap[t.ID])
+
+		// Collect and sort scheduled dates for this task
+		var scheduledDatesForTask []string
+		for i := 0; i < 7; i++ {
+			day := monday.AddDate(0, 0, i)
+			dateStr := day.Format("2006-01-02")
+			if scheduleMap[t.ID][dateStr] {
+				scheduledDatesForTask = append(scheduledDatesForTask, dateStr)
+			}
+		}
+
+		// Mark first N scheduled dates as completed
+		completedScheduled := make(map[string]bool)
+		for i := 0; i < completionCount && i < len(scheduledDatesForTask); i++ {
+			completedScheduled[scheduledDatesForTask[i]] = true
+		}
+
 		days := make([]WeeklyTaskDay, 7)
 		for i := 0; i < 7; i++ {
 			day := monday.AddDate(0, 0, i)
 			dateStr := day.Format("2006-01-02")
+			isScheduled := scheduleMap[t.ID][dateStr]
 			days[i] = WeeklyTaskDay{
 				Date:      dateStr,
 				Weekday:   day.Weekday().String(),
-				Completed: completionMap[t.ID][dateStr],
+				Completed: completedScheduled[dateStr],
+				Scheduled: isScheduled,
 			}
 		}
 		wt.Days = days
@@ -1106,4 +1299,139 @@ func (s *Server) GetTaskCompletionsHandler(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, completions)
+}
+
+type SetTaskProjectRequest struct {
+	ProjectID *int32 `json:"project_id"`
+}
+
+func (s *Server) SetTaskProjectHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	task, err := s.DB.GetTaskById(c.Request().Context(), int32(taskID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve task"})
+	}
+	if task.CreatedByUserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
+	var req SetTaskProjectRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+
+	projectID := sql.NullInt32{}
+	if req.ProjectID != nil {
+		projectID = sql.NullInt32{Int32: *req.ProjectID, Valid: true}
+	}
+
+	err = s.DB.UpdateTaskProject(c.Request().Context(), db.UpdateTaskProjectParams{
+		ProjectID: projectID,
+		ID:        int32(taskID),
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update task project"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task project updated successfully"})
+}
+
+type ScheduleTaskRequest struct {
+	Date string `json:"date" validate:"required"`
+}
+
+func (s *Server) ScheduleTaskHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	allowed, err := isTaskOwnerOrShared(c, s.DB, int32(taskID), authUserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check authorization"})
+	}
+	if !allowed {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
+	var req ScheduleTaskRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	date, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid date format, use YYYY-MM-DD"})
+	}
+
+	err = s.DB.ScheduleTask(c.Request().Context(), db.ScheduleTaskParams{
+		TaskID: int32(taskID),
+		Date:   date,
+	})
+	if err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "Task already scheduled for this date"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to schedule task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task scheduled successfully"})
+}
+
+func (s *Server) UnscheduleTaskHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	allowed, err := isTaskOwnerOrShared(c, s.DB, int32(taskID), authUserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check authorization"})
+	}
+	if !allowed {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
+	var req ScheduleTaskRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	date, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid date format, use YYYY-MM-DD"})
+	}
+
+	err = s.DB.UnscheduleTask(c.Request().Context(), db.UnscheduleTaskParams{
+		TaskID: int32(taskID),
+		Date:   date,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to unschedule task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task unscheduled successfully"})
 }

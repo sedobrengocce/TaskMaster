@@ -112,8 +112,8 @@ type Project struct {
 }
 
 type RefreshToken struct {
-	ID        int64
-	UserID    int64
+	ID        int32
+	UserID    int32
 	TokenHash string
 	ExpiresAt time.Time
 	CreatedAt sql.NullTime
@@ -143,6 +143,12 @@ type Task struct {
 	Priority        sql.NullInt32
 	CreatedByUserID int32
 	CreatedAt       sql.NullTime
+}
+
+type TaskDate struct {
+	ID     int32
+	TaskID int32
+	Date   time.Time
 }
 
 type TaskLog struct {

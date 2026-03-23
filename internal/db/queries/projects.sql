@@ -1,4 +1,4 @@
--- name: CreateProject :exec
+-- name: CreateProject :execresult
 INSERT INTO projects (user_id, name, color_hex) VALUES (?, ?, ?);
 
 -- name: GetProjectsByUserId :many

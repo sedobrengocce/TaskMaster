@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -18,6 +19,15 @@ import (
 	"github.com/sedobrengocce/TaskMaster/internal/db"
 	"github.com/sedobrengocce/TaskMaster/internal/utils"
 )
+
+// mockResult implements sql.Result for tests.
+type mockResult struct {
+	lastID   int64
+	affected int64
+}
+
+func (r mockResult) LastInsertId() (int64, error) { return r.lastID, nil }
+func (r mockResult) RowsAffected() (int64, error) { return r.affected, nil }
 
 // ── HealthCheck ─────────────────────────────────────────────────
 
@@ -89,7 +99,7 @@ func TestRegisterUserHandler_DBError(t *testing.T) {
 func TestRegisterUserHandler_DuplicateEmail(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("CreateUser", mock.Anything, mock.Anything).Return(errors.New("user already exists"))
+	ts.mockDB.On("CreateUser", mock.Anything, mock.Anything).Return(&mysql.MySQLError{Number: 1062, Message: "Duplicate entry"})
 
 	body := []byte(`{"email":"dup@example.com","password":"password123"}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/register", body)
@@ -214,7 +224,7 @@ func TestLogoutUserHandler_Success(t *testing.T) {
 
 	token := createTestJWT(t, ts.server.JWTSecret, 1, 5*time.Minute)
 
-	ts.mockDB.On("RevokeRefreshToken", mock.Anything, int64(1)).Return(nil)
+	ts.mockDB.On("RevokeRefreshToken", mock.Anything, int32(1)).Return(nil)
 	ts.mockDB.On("GetClientByClientID", mock.Anything, mock.Anything).Return(db.GetClientByClientIDRow{}, errors.New("not found"))
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/logout", nil)
@@ -238,7 +248,7 @@ func TestLogoutUserHandler_TokenAlreadyInDenylist(t *testing.T) {
 	// Pre-add to denylist
 	ts.miniredis.Set(token, "revoked")
 
-	ts.mockDB.On("RevokeRefreshToken", mock.Anything, int64(1)).Return(nil)
+	ts.mockDB.On("RevokeRefreshToken", mock.Anything, int32(1)).Return(nil)
 	ts.mockDB.On("GetClientByClientID", mock.Anything, mock.Anything).Return(db.GetClientByClientIDRow{}, errors.New("not found"))
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/logout", nil)
@@ -258,7 +268,7 @@ func TestRefreshTokenHandler_SuccessWeb(t *testing.T) {
 	hashedRefresh := utils.HashToken(refreshToken)
 
 	ts.mockDB.On("GetClientByClientID", mock.Anything, mock.Anything).Return(db.GetClientByClientIDRow{}, errors.New("not found"))
-	ts.mockDB.On("GetRefreshToken", mock.Anything, int64(1)).Return(db.GetRefreshTokenRow{
+	ts.mockDB.On("GetRefreshToken", mock.Anything, int32(1)).Return(db.GetRefreshTokenRow{
 		UserID:    1,
 		TokenHash: hashedRefresh,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
@@ -297,7 +307,7 @@ func TestRefreshTokenHandler_SuccessMobile(t *testing.T) {
 		ClientSecretHash: sql.NullString{String: clientSecretHash, Valid: true},
 		ClientType:       db.ClientsClientTypeConfidential,
 	}, nil)
-	ts.mockDB.On("GetRefreshToken", mock.Anything, int64(1)).Return(db.GetRefreshTokenRow{
+	ts.mockDB.On("GetRefreshToken", mock.Anything, int32(1)).Return(db.GetRefreshTokenRow{
 		UserID:    1,
 		TokenHash: hashedRefresh,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
@@ -364,21 +374,27 @@ func TestCreateProject_Success(t *testing.T) {
 		Name:     "My Project",
 		UserID:   1,
 		ColorHex: sql.NullString{},
-	}).Return(nil)
+	}).Return(mockResult{lastID: 42, affected: 1}, nil)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(42)).Return(db.Project{
+		ID:     42,
+		UserID: 1,
+		Name:   "My Project",
+	}, nil)
 
 	body := []byte(`{"name":"My Project","user_id":1}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects", body)
 
 	err := ts.server.CreateProject(c)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, http.StatusCreated, rec.Code)
 	ts.mockDB.AssertExpectations(t)
 }
 
 func TestCreateProject_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("CreateProject", mock.Anything, mock.Anything).Return(errors.New("db error"))
+	ts.mockDB.On("CreateProject", mock.Anything, mock.Anything).Return(mockResult{}, errors.New("db error"))
 
 	body := []byte(`{"name":"My Project","user_id":1}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects", body)
@@ -405,7 +421,7 @@ func TestListProjects_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp []db.Project
+	var resp []ProjectResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Len(t, resp, 2)
 	ts.mockDB.AssertExpectations(t)
@@ -693,14 +709,21 @@ func TestCreateTask_Success(t *testing.T) {
 		TaskType:        db.TasksTaskTypeSingle,
 		Priority:        sql.NullInt32{},
 		CreatedByUserID: 1,
-	}).Return(nil)
+	}).Return(mockResult{lastID: 7, affected: 1}, nil)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(7)).Return(db.Task{
+		ID:              7,
+		Title:           "My Task",
+		TaskType:        db.TasksTaskTypeSingle,
+		CreatedByUserID: 1,
+	}, nil)
 
 	body := []byte(`{"title":"My Task","task_type":"single","user_id":1}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks", body)
 
 	err := ts.server.CreateTaskHandler(c)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, http.StatusCreated, rec.Code)
 	ts.mockDB.AssertExpectations(t)
 }
 
@@ -718,7 +741,7 @@ func TestCreateTask_InvalidJSON(t *testing.T) {
 func TestCreateTask_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("CreateTask", mock.Anything, mock.Anything).Return(errors.New("db error"))
+	ts.mockDB.On("CreateTask", mock.Anything, mock.Anything).Return(mockResult{}, errors.New("db error"))
 
 	body := []byte(`{"title":"My Task","task_type":"single","user_id":1}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks", body)
@@ -1408,16 +1431,31 @@ func TestCompleteTask_SharedAccess(t *testing.T) {
 func TestGetWeeklyViewHandler_Success(t *testing.T) {
 	ts := newTestServer(t)
 
-	tasks := []db.Task{
-		{ID: 1, Title: "Task A", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1},
-		{ID: 2, Title: "Task B", TaskType: db.TasksTaskTypeRepetitive, CreatedByUserID: 1},
-	}
-	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return(tasks, nil)
-
 	monday := time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)
 	sunday := monday.AddDate(0, 0, 7)
+
+	// Task A scheduled on Monday, Task B scheduled on Wednesday
+	scheduledDates := []db.TaskDate{
+		{ID: 1, TaskID: 1, Date: time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)},
+		{ID: 2, TaskID: 2, Date: time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC)},
+	}
+	ts.mockDB.On("GetScheduledTasksForDateRange", mock.Anything, db.GetScheduledTasksForDateRangeParams{
+		UserID:    1,
+		StartDate: monday,
+		EndDate:   monday.AddDate(0, 0, 6),
+	}).Return(scheduledDates, nil)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{
+		ID: 1, Title: "Task A", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1,
+	}, nil)
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(2)).Return(db.Task{
+		ID: 2, Title: "Task B", TaskType: db.TasksTaskTypeRepetitive, CreatedByUserID: 1,
+	}, nil)
+
+	// Task A: scheduled Monday, completed on Tuesday (different day!)
+	// Task B: scheduled Wednesday, completed on Wednesday (same day)
 	completions := []db.TaskLog{
-		{ID: 1, TaskID: 1, CompletedByUserID: 1, CompletedAt: sql.NullTime{Time: time.Date(2026, 3, 9, 10, 0, 0, 0, time.UTC), Valid: true}},
+		{ID: 1, TaskID: 1, CompletedByUserID: 1, CompletedAt: sql.NullTime{Time: time.Date(2026, 3, 10, 10, 0, 0, 0, time.UTC), Valid: true}},
 		{ID: 2, TaskID: 2, CompletedByUserID: 1, CompletedAt: sql.NullTime{Time: time.Date(2026, 3, 11, 14, 0, 0, 0, time.UTC), Valid: true}},
 	}
 	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, db.GetCompletionsForWeekParams{
@@ -1438,20 +1476,33 @@ func TestGetWeeklyViewHandler_Success(t *testing.T) {
 	assert.Equal(t, "2026-03-09", resp.WeekStart)
 	assert.Equal(t, "2026-03-15", resp.WeekEnd)
 	assert.Len(t, resp.Tasks, 2)
-	assert.Len(t, resp.Tasks[0].Days, 7)
-	// Task A completed on Monday 2026-03-09
-	assert.True(t, resp.Tasks[0].Days[0].Completed)
-	assert.False(t, resp.Tasks[0].Days[1].Completed)
-	// Task B completed on Wednesday 2026-03-11
-	assert.False(t, resp.Tasks[1].Days[0].Completed)
-	assert.True(t, resp.Tasks[1].Days[2].Completed)
+
+	// Find tasks by ID since map iteration order is non-deterministic
+	taskMap := make(map[int32]WeeklyTask)
+	for _, task := range resp.Tasks {
+		taskMap[task.ID] = task
+	}
+
+	taskA := taskMap[1]
+	assert.Len(t, taskA.Days, 7)
+	// Task A scheduled Monday, completed Tuesday — completion should map to Monday (scheduled day)
+	assert.True(t, taskA.Days[0].Scheduled)
+	assert.True(t, taskA.Days[0].Completed)
+	assert.False(t, taskA.Days[1].Scheduled)
+	assert.False(t, taskA.Days[1].Completed) // Tuesday: no mark even though completion was on this day
+
+	taskB := taskMap[2]
+	// Task B scheduled and completed on Wednesday 2026-03-11
+	assert.False(t, taskB.Days[0].Scheduled)
+	assert.True(t, taskB.Days[2].Scheduled)
+	assert.True(t, taskB.Days[2].Completed)
 	ts.mockDB.AssertExpectations(t)
 }
 
 func TestGetWeeklyViewHandler_DefaultCurrentWeek(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return([]db.Task{}, nil)
+	ts.mockDB.On("GetScheduledTasksForDateRange", mock.Anything, mock.Anything).Return([]db.TaskDate{}, nil)
 	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, nil)
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly", nil)
@@ -1484,9 +1535,13 @@ func TestGetWeeklyViewHandler_InvalidWeekParam(t *testing.T) {
 func TestGetWeeklyViewHandler_MidWeekDate(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return([]db.Task{}, nil)
 	monday := time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)
 	sunday := monday.AddDate(0, 0, 7)
+	ts.mockDB.On("GetScheduledTasksForDateRange", mock.Anything, db.GetScheduledTasksForDateRangeParams{
+		UserID:    1,
+		StartDate: monday,
+		EndDate:   monday.AddDate(0, 0, 6),
+	}).Return([]db.TaskDate{}, nil)
 	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, db.GetCompletionsForWeekParams{
 		UserID:    1,
 		StartDate: sql.NullTime{Time: monday, Valid: true},
@@ -1509,7 +1564,7 @@ func TestGetWeeklyViewHandler_MidWeekDate(t *testing.T) {
 func TestGetWeeklyViewHandler_TasksDBError(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("GetTasksByUserId", mock.Anything, mock.Anything).Return([]db.Task{}, errors.New("db error"))
+	ts.mockDB.On("GetScheduledTasksForDateRange", mock.Anything, mock.Anything).Return([]db.TaskDate{}, errors.New("db error"))
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
 	setAuthUser(c, 1)
@@ -1522,7 +1577,7 @@ func TestGetWeeklyViewHandler_TasksDBError(t *testing.T) {
 func TestGetWeeklyViewHandler_CompletionsDBError(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("GetTasksByUserId", mock.Anything, mock.Anything).Return([]db.Task{}, nil)
+	ts.mockDB.On("GetScheduledTasksForDateRange", mock.Anything, mock.Anything).Return([]db.TaskDate{}, nil)
 	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, errors.New("db error"))
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
@@ -1547,7 +1602,7 @@ func TestGetWeeklyViewHandler_Unauthorized(t *testing.T) {
 func TestGetWeeklyViewHandler_NoTasks(t *testing.T) {
 	ts := newTestServer(t)
 
-	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return([]db.Task{}, nil)
+	ts.mockDB.On("GetScheduledTasksForDateRange", mock.Anything, mock.Anything).Return([]db.TaskDate{}, nil)
 	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, nil)
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
@@ -1565,10 +1620,18 @@ func TestGetWeeklyViewHandler_NoTasks(t *testing.T) {
 func TestGetWeeklyViewHandler_NoCompletions(t *testing.T) {
 	ts := newTestServer(t)
 
-	tasks := []db.Task{
-		{ID: 1, Title: "Task A", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1},
+	monday := time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)
+	scheduledDates := []db.TaskDate{
+		{ID: 1, TaskID: 1, Date: time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)},
 	}
-	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return(tasks, nil)
+	ts.mockDB.On("GetScheduledTasksForDateRange", mock.Anything, db.GetScheduledTasksForDateRangeParams{
+		UserID:    1,
+		StartDate: monday,
+		EndDate:   monday.AddDate(0, 0, 6),
+	}).Return(scheduledDates, nil)
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{
+		ID: 1, Title: "Task A", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1,
+	}, nil)
 	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, nil)
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)

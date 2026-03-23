@@ -10,7 +10,7 @@ import (
 	"database/sql"
 )
 
-const createProject = `-- name: CreateProject :exec
+const createProject = `-- name: CreateProject :execresult
 INSERT INTO projects (user_id, name, color_hex) VALUES (?, ?, ?)
 `
 
@@ -20,9 +20,8 @@ type CreateProjectParams struct {
 	ColorHex sql.NullString
 }
 
-func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
-	_, err := q.db.ExecContext(ctx, createProject, arg.UserID, arg.Name, arg.ColorHex)
-	return err
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createProject, arg.UserID, arg.Name, arg.ColorHex)
 }
 
 const deleteProject = `-- name: DeleteProject :exec

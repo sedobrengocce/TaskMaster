@@ -35,6 +35,13 @@ func (s *Server) RegisterRoutes() {
 	apiPrivate.PUT("/tasks/:id", s.UpdateTaskHandler)
 	apiPrivate.DELETE("/tasks/:id", s.DeleteTaskHandler)
 
+	// Task Project Assignment
+	apiPrivate.PUT("/tasks/:id/project", s.SetTaskProjectHandler)
+
+	// Task Scheduling
+	apiPrivate.POST("/tasks/:id/schedule", s.ScheduleTaskHandler)
+	apiPrivate.DELETE("/tasks/:id/schedule", s.UnscheduleTaskHandler)
+
 	// Task Sharing
 	apiPrivate.POST("/tasks/:id/share", s.ShareTaskHandler)
 	apiPrivate.DELETE("/tasks/:id/share", s.UnshareTaskHandler)

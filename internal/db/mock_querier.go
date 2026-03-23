@@ -13,14 +13,14 @@ type MockQuerier struct {
 
 var _ Querier = (*MockQuerier)(nil)
 
-func (m *MockQuerier) CreateProject(ctx context.Context, arg CreateProjectParams) error {
+func (m *MockQuerier) CreateProject(ctx context.Context, arg CreateProjectParams) (sql.Result, error) {
 	args := m.Called(ctx, arg)
-	return args.Error(0)
+	return args.Get(0).(sql.Result), args.Error(1)
 }
 
-func (m *MockQuerier) CreateTask(ctx context.Context, arg CreateTaskParams) error {
+func (m *MockQuerier) CreateTask(ctx context.Context, arg CreateTaskParams) (sql.Result, error) {
 	args := m.Called(ctx, arg)
-	return args.Error(0)
+	return args.Get(0).(sql.Result), args.Error(1)
 }
 
 func (m *MockQuerier) CreateUser(ctx context.Context, arg CreateUserParams) error {
@@ -58,7 +58,7 @@ func (m *MockQuerier) GetProjectsByUserId(ctx context.Context, arg GetProjectsBy
 	return args.Get(0).([]Project), args.Error(1)
 }
 
-func (m *MockQuerier) GetRefreshToken(ctx context.Context, userID int64) (GetRefreshTokenRow, error) {
+func (m *MockQuerier) GetRefreshToken(ctx context.Context, userID int32) (GetRefreshTokenRow, error) {
 	args := m.Called(ctx, userID)
 	return args.Get(0).(GetRefreshTokenRow), args.Error(1)
 }
@@ -69,6 +69,11 @@ func (m *MockQuerier) GetTaskListByProjectId(ctx context.Context, projectID sql.
 }
 
 func (m *MockQuerier) GetTasksByUserId(ctx context.Context, arg GetTasksByUserIdParams) ([]Task, error) {
+	args := m.Called(ctx, arg)
+	return args.Get(0).([]Task), args.Error(1)
+}
+
+func (m *MockQuerier) GetUnscheduledTasksByUserId(ctx context.Context, arg GetUnscheduledTasksByUserIdParams) ([]Task, error) {
 	args := m.Called(ctx, arg)
 	return args.Get(0).([]Task), args.Error(1)
 }
@@ -103,7 +108,7 @@ func (m *MockQuerier) InsertRefreshToken(ctx context.Context, arg InsertRefreshT
 	return args.Error(0)
 }
 
-func (m *MockQuerier) RevokeRefreshToken(ctx context.Context, userID int64) error {
+func (m *MockQuerier) RevokeRefreshToken(ctx context.Context, userID int32) error {
 	args := m.Called(ctx, userID)
 	return args.Error(0)
 }
@@ -176,4 +181,29 @@ func (m *MockQuerier) IsTaskSharedWithUser(ctx context.Context, arg IsTaskShared
 func (m *MockQuerier) GetTaskById(ctx context.Context, id int32) (Task, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(Task), args.Error(1)
+}
+
+func (m *MockQuerier) UpdateTaskProject(ctx context.Context, arg UpdateTaskProjectParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
+}
+
+func (m *MockQuerier) ScheduleTask(ctx context.Context, arg ScheduleTaskParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
+}
+
+func (m *MockQuerier) UnscheduleTask(ctx context.Context, arg UnscheduleTaskParams) error {
+	args := m.Called(ctx, arg)
+	return args.Error(0)
+}
+
+func (m *MockQuerier) GetTaskDates(ctx context.Context, taskID int32) ([]TaskDate, error) {
+	args := m.Called(ctx, taskID)
+	return args.Get(0).([]TaskDate), args.Error(1)
+}
+
+func (m *MockQuerier) GetScheduledTasksForDateRange(ctx context.Context, arg GetScheduledTasksForDateRangeParams) ([]TaskDate, error) {
+	args := m.Called(ctx, arg)
+	return args.Get(0).([]TaskDate), args.Error(1)
 }

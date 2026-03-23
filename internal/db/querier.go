@@ -11,8 +11,8 @@ import (
 
 type Querier interface {
 	CompleteTask(ctx context.Context, arg CompleteTaskParams) error
-	CreateProject(ctx context.Context, arg CreateProjectParams) error
-	CreateTask(ctx context.Context, arg CreateTaskParams) error
+	CreateProject(ctx context.Context, arg CreateProjectParams) (sql.Result, error)
+	CreateTask(ctx context.Context, arg CreateTaskParams) (sql.Result, error)
 	// Crea un nuovo utente e restituisce l'utente appena creato.
 	CreateUser(ctx context.Context, arg CreateUserParams) error
 	DeleteProject(ctx context.Context, id int32) error
@@ -23,11 +23,14 @@ type Querier interface {
 	GetCompletionsForWeek(ctx context.Context, arg GetCompletionsForWeekParams) ([]TaskLog, error)
 	GetProjectById(ctx context.Context, id int32) (Project, error)
 	GetProjectsByUserId(ctx context.Context, arg GetProjectsByUserIdParams) ([]Project, error)
-	GetRefreshToken(ctx context.Context, userID int64) (GetRefreshTokenRow, error)
+	GetRefreshToken(ctx context.Context, userID int32) (GetRefreshTokenRow, error)
+	GetScheduledTasksForDateRange(ctx context.Context, arg GetScheduledTasksForDateRangeParams) ([]TaskDate, error)
 	GetTaskById(ctx context.Context, id int32) (Task, error)
 	GetTaskCompletions(ctx context.Context, taskID int32) ([]TaskLog, error)
+	GetTaskDates(ctx context.Context, taskID int32) ([]TaskDate, error)
 	GetTaskListByProjectId(ctx context.Context, projectID sql.NullInt32) ([]Task, error)
 	GetTasksByUserId(ctx context.Context, arg GetTasksByUserIdParams) ([]Task, error)
+	GetUnscheduledTasksByUserId(ctx context.Context, arg GetUnscheduledTasksByUserIdParams) ([]Task, error)
 	// Recupera un utente dal suo indirizzo email.
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	// Recupera un utente dal suo indirizzo email e dalla password.
@@ -40,14 +43,17 @@ type Querier interface {
 	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error
 	IsProjectSharedWithUser(ctx context.Context, arg IsProjectSharedWithUserParams) (bool, error)
 	IsTaskSharedWithUser(ctx context.Context, arg IsTaskSharedWithUserParams) (bool, error)
-	RevokeRefreshToken(ctx context.Context, userID int64) error
+	RevokeRefreshToken(ctx context.Context, userID int32) error
+	ScheduleTask(ctx context.Context, arg ScheduleTaskParams) error
 	ShareProjectWithUser(ctx context.Context, arg ShareProjectWithUserParams) error
 	ShareTaskWithUser(ctx context.Context, arg ShareTaskWithUserParams) error
 	UncompleteTask(ctx context.Context, arg UncompleteTaskParams) error
+	UnscheduleTask(ctx context.Context, arg UnscheduleTaskParams) error
 	UnshareProjectWithUser(ctx context.Context, arg UnshareProjectWithUserParams) error
 	UnshareTaskWithUser(ctx context.Context, arg UnshareTaskWithUserParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
 	UpdateTask(ctx context.Context, arg UpdateTaskParams) error
+	UpdateTaskProject(ctx context.Context, arg UpdateTaskProjectParams) error
 	// Aggiorna un utente esistente e restituisce l'utente aggiornato.
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 }

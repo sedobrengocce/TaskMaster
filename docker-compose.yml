@@ -9,11 +9,19 @@ services:
     volumes:
       - ./:/app
     environment:
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_USER=${DB_USER:-platform_user}
+      - DB_PASSWORD=${DB_PASSWORD:-dev_password}
       - DB_HOST=db
       - DB_PORT=3306
-      - DB_NAME=${DB_NAME}
+      - DB_NAME=${DB_NAME:-weekly_platform}
+      - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret}
+      - REFRESH_SECRET=${REFRESH_SECRET:-dev_refresh_secret}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev_redis_password}
+      - MOBILE_CLIENT_SECRET=${MOBILE_CLIENT_SECRET:-dev_mobile_secret}
+      - MOBILE_CLIENT_ID=${MOBILE_CLIENT_ID:-dev_mobile_client}
+      - PORT=${PORT:-3000}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
@@ -25,14 +33,14 @@ services:
   db:
     image: mariadb:10.6
     environment:
-      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
-      - MARIADB_DATABASE=${DB_NAME}
-      - MARIADB_USER=${DB_USER}
-      - MARIADB_PASSWORD=${DB_PASSWORD}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-dev_root_password}
+      - MARIADB_DATABASE=${DB_NAME:-weekly_platform}
+      - MARIADB_USER=${DB_USER:-platform_user}
+      - MARIADB_PASSWORD=${DB_PASSWORD:-dev_password}
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER}", "-p${DB_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-platform_user}", "-p${DB_PASSWORD:-dev_password}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,7 +53,12 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-dev_redis_password}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-dev_redis_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - app-network
 

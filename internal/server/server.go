@@ -70,11 +70,19 @@ func (s *Server) Run() error {
 			} else if err.Error() == "invalid or expired jwt" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token is invalid or expired"}) // Gestione del refresh token
 			}
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or expired token"})
 		},
 	}))
 
 	s.echo.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
+		Skipper: func(c echo.Context) bool {
+			path := c.Path()
+			if path == "/api/register" || path == "/api/login" ||
+				path == "/api/refresh_token" || path == "/healthcheck" {
+				return true
+			}
+			return c.Request().Header.Get("Authorization") != ""
+		},
 		TokenLookup:    "cookie:_csrf",
 		CookiePath:     "/",
 		CookieHTTPOnly: true,

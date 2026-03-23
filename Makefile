@@ -1,4 +1,4 @@
-.PHONY: all build dev clean test migrate-up migrate-down watch-go install-tools help
+.PHONY: all build build-cli dev clean test migrate-up migrate-down watch-go install-tools help
 
 # Variables
 BINARY_NAME=taskmaster
@@ -37,6 +37,9 @@ build-go:
 	make migrate-up
 	CGO_ENABLED=0 go build -o $(BINARY_NAME) ./cmd/server
 
+build-cli:
+	CGO_ENABLED=0 go build -o taskmaster-cli ./cmd/cli
+
 # Testing
 test:
 	go test -v ./...
@@ -66,4 +69,5 @@ help:
 	@echo "  make build        - Build the application"
 	@echo "  make test         - Run tests"
 	@echo "  make clean        - Clean build artifacts"
+	@echo "  make build-cli    - Build the CLI client"
 	@echo "  make install-tools - Install development tools"
