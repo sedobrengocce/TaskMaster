@@ -29,6 +29,13 @@ INSERT INTO shared_tasks (task_id, shared_with_user_id) VALUES (?, ?);
 -- name: UnshareTaskWithUser :exec
 DELETE FROM shared_tasks WHERE task_id = ? AND shared_with_user_id = ?;
 
+-- name: GetTaskById :one
+SELECT id, project_id, title, description, task_type, priority, created_by_user_id, created_at
+FROM tasks WHERE id = ?;
+
+-- name: IsTaskSharedWithUser :one
+SELECT EXISTS(SELECT 1 FROM shared_tasks WHERE task_id = ? AND shared_with_user_id = ?) AS is_shared;
+
 -- name: CompleteTask :exec
 INSERT INTO task_logs (task_id, completed_by_user_id) VALUES (?, ?);
 

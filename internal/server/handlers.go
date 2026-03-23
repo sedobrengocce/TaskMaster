@@ -13,6 +13,50 @@ import (
 	"github.com/sedobrengocce/TaskMaster/internal/utils"
 )
 
+func getUserIDFromContext(c echo.Context) (int32, error) {
+	token, ok := c.Get("user").(*jwt.Token)
+	if !ok || token == nil {
+		return 0, echo.NewHTTPError(http.StatusUnauthorized, "Missing token")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return 0, echo.NewHTTPError(http.StatusUnauthorized, "Invalid claims")
+	}
+	userIDFloat, ok := claims["sub"].(float64)
+	if !ok {
+		return 0, echo.NewHTTPError(http.StatusUnauthorized, "Invalid sub claim")
+	}
+	return int32(userIDFloat), nil
+}
+
+func isProjectOwnerOrShared(ctx echo.Context, querier db.Querier, projectID int32, userID int32) (bool, error) {
+	project, err := querier.GetProjectById(ctx.Request().Context(), projectID)
+	if err != nil {
+		return false, err
+	}
+	if project.UserID == userID {
+		return true, nil
+	}
+	return querier.IsProjectSharedWithUser(ctx.Request().Context(), db.IsProjectSharedWithUserParams{
+		ProjectID:        projectID,
+		SharedWithUserID: userID,
+	})
+}
+
+func isTaskOwnerOrShared(ctx echo.Context, querier db.Querier, taskID int32, userID int32) (bool, error) {
+	task, err := querier.GetTaskById(ctx.Request().Context(), taskID)
+	if err != nil {
+		return false, err
+	}
+	if task.CreatedByUserID == userID {
+		return true, nil
+	}
+	return querier.IsTaskSharedWithUser(ctx.Request().Context(), db.IsTaskSharedWithUserParams{
+		TaskID:           taskID,
+		SharedWithUserID: userID,
+	})
+}
+
 type ClientType string
 
 const (
@@ -454,6 +498,18 @@ func (s *Server) GetProject(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
 	}
 
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	allowed, err := isProjectOwnerOrShared(c, s.DB, int32(projectID), authUserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check authorization"})
+	}
+	if !allowed {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	project, err := s.DB.GetProjectById(c.Request().Context(), int32(projectID))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve project"})
@@ -479,6 +535,19 @@ func (s *Server) UpdateProject(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
 	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	project, err := s.DB.GetProjectById(c.Request().Context(), int32(projectID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve project"})
+	}
+	if project.UserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	colorHex := sql.NullString{}
 	if req.ColorHex != nil {
 		colorHex = sql.NullString{String: *req.ColorHex, Valid: true}
@@ -501,6 +570,18 @@ func (s *Server) DeleteProject(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
 	}
 
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	project, err := s.DB.GetProjectById(c.Request().Context(), int32(projectID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve project"})
+	}
+	if project.UserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	err = s.DB.DeleteProject(c.Request().Context(), int32(projectID))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete project"})
@@ -518,6 +599,19 @@ func (s *Server) SharedProjectHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
 	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	project, err := s.DB.GetProjectById(c.Request().Context(), int32(projectID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve project"})
+	}
+	if project.UserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	var req ShareRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
@@ -542,6 +636,19 @@ func (s *Server) UnshareProjectHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
 	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	project, err := s.DB.GetProjectById(c.Request().Context(), int32(projectID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve project"})
+	}
+	if project.UserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	var req ShareRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
@@ -566,6 +673,19 @@ func (s *Server) ShareTaskHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
 	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	task, err := s.DB.GetTaskById(c.Request().Context(), int32(taskID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve task"})
+	}
+	if task.CreatedByUserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	var req ShareRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
@@ -590,6 +710,19 @@ func (s *Server) UnshareTaskHandler(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
 	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	task, err := s.DB.GetTaskById(c.Request().Context(), int32(taskID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve task"})
+	}
+	if task.CreatedByUserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	var req ShareRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
@@ -669,6 +802,18 @@ func (s *Server) ListTasksByProjectHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid project ID"})
 	}
 
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	allowed, err := isProjectOwnerOrShared(c, s.DB, int32(projectID), authUserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check authorization"})
+	}
+	if !allowed {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	tasks, err := s.DB.GetTaskListByProjectId(c.Request().Context(), sql.NullInt32{Int32: int32(projectID), Valid: true})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve tasks"})
@@ -706,6 +851,18 @@ func (s *Server) UpdateTaskHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
 	}
 
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	task, err := s.DB.GetTaskById(c.Request().Context(), int32(taskID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve task"})
+	}
+	if task.CreatedByUserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	projectID := sql.NullInt32{}
 	if req.ProjectID != nil {
 		projectID = sql.NullInt32{Int32: *req.ProjectID, Valid: true}
@@ -740,6 +897,18 @@ func (s *Server) DeleteTaskHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
 	}
 
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	task, err := s.DB.GetTaskById(c.Request().Context(), int32(taskID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve task"})
+	}
+	if task.CreatedByUserID != authUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+	}
+
 	err = s.DB.DeleteTask(c.Request().Context(), int32(taskID))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete task"})
@@ -756,6 +925,18 @@ func (s *Server) CompleteTaskHandler(c echo.Context) error {
 	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+	allowed, err := isTaskOwnerOrShared(c, s.DB, int32(taskID), authUserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check authorization"})
+	}
+	if !allowed {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
 	}
 
 	var req CompleteTaskRequest

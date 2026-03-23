@@ -92,6 +92,22 @@ func (q *Queries) GetProjectsByUserId(ctx context.Context, arg GetProjectsByUser
 	return items, nil
 }
 
+const isProjectSharedWithUser = `-- name: IsProjectSharedWithUser :one
+SELECT EXISTS(SELECT 1 FROM shared_projects WHERE project_id = ? AND shared_with_user_id = ?) AS is_shared
+`
+
+type IsProjectSharedWithUserParams struct {
+	ProjectID        int32
+	SharedWithUserID int32
+}
+
+func (q *Queries) IsProjectSharedWithUser(ctx context.Context, arg IsProjectSharedWithUserParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isProjectSharedWithUser, arg.ProjectID, arg.SharedWithUserID)
+	var is_shared bool
+	err := row.Scan(&is_shared)
+	return is_shared, err
+}
+
 const shareProjectWithUser = `-- name: ShareProjectWithUser :exec
 INSERT INTO shared_projects (project_id, shared_with_user_id) VALUES (?, ?)
 `

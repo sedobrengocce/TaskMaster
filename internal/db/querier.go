@@ -24,6 +24,7 @@ type Querier interface {
 	GetProjectById(ctx context.Context, id int32) (Project, error)
 	GetProjectsByUserId(ctx context.Context, arg GetProjectsByUserIdParams) ([]Project, error)
 	GetRefreshToken(ctx context.Context, userID int64) (GetRefreshTokenRow, error)
+	GetTaskById(ctx context.Context, id int32) (Task, error)
 	GetTaskCompletions(ctx context.Context, taskID int32) ([]TaskLog, error)
 	GetTaskListByProjectId(ctx context.Context, projectID sql.NullInt32) ([]Task, error)
 	GetTasksByUserId(ctx context.Context, arg GetTasksByUserIdParams) ([]Task, error)
@@ -37,6 +38,8 @@ type Querier interface {
 	GetUserByTerm(ctx context.Context, concat interface{}) ([]User, error)
 	InsertClient(ctx context.Context, arg InsertClientParams) error
 	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error
+	IsProjectSharedWithUser(ctx context.Context, arg IsProjectSharedWithUserParams) (bool, error)
+	IsTaskSharedWithUser(ctx context.Context, arg IsTaskSharedWithUserParams) (bool, error)
 	RevokeRefreshToken(ctx context.Context, userID int64) error
 	ShareProjectWithUser(ctx context.Context, arg ShareProjectWithUserParams) error
 	ShareTaskWithUser(ctx context.Context, arg ShareTaskWithUserParams) error

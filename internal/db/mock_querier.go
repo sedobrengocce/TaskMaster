@@ -162,3 +162,18 @@ func (m *MockQuerier) GetCompletionsForWeek(ctx context.Context, arg GetCompleti
 	args := m.Called(ctx, arg)
 	return args.Get(0).([]TaskLog), args.Error(1)
 }
+
+func (m *MockQuerier) IsProjectSharedWithUser(ctx context.Context, arg IsProjectSharedWithUserParams) (bool, error) {
+	args := m.Called(ctx, arg)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockQuerier) IsTaskSharedWithUser(ctx context.Context, arg IsTaskSharedWithUserParams) (bool, error) {
+	args := m.Called(ctx, arg)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockQuerier) GetTaskById(ctx context.Context, id int32) (Task, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(Task), args.Error(1)
+}

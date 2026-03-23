@@ -102,6 +102,27 @@ func (q *Queries) GetCompletionsForWeek(ctx context.Context, arg GetCompletionsF
 	return items, nil
 }
 
+const getTaskById = `-- name: GetTaskById :one
+SELECT id, project_id, title, description, task_type, priority, created_by_user_id, created_at
+FROM tasks WHERE id = ?
+`
+
+func (q *Queries) GetTaskById(ctx context.Context, id int32) (Task, error) {
+	row := q.db.QueryRowContext(ctx, getTaskById, id)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Title,
+		&i.Description,
+		&i.TaskType,
+		&i.Priority,
+		&i.CreatedByUserID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getTaskCompletions = `-- name: GetTaskCompletions :many
 SELECT id, task_id, completed_by_user_id, completed_at
 FROM task_logs WHERE task_id = ? ORDER BY completed_at DESC
@@ -216,6 +237,22 @@ func (q *Queries) GetTasksByUserId(ctx context.Context, arg GetTasksByUserIdPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const isTaskSharedWithUser = `-- name: IsTaskSharedWithUser :one
+SELECT EXISTS(SELECT 1 FROM shared_tasks WHERE task_id = ? AND shared_with_user_id = ?) AS is_shared
+`
+
+type IsTaskSharedWithUserParams struct {
+	TaskID           int32
+	SharedWithUserID int32
+}
+
+func (q *Queries) IsTaskSharedWithUser(ctx context.Context, arg IsTaskSharedWithUserParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isTaskSharedWithUser, arg.TaskID, arg.SharedWithUserID)
+	var is_shared bool
+	err := row.Scan(&is_shared)
+	return is_shared, err
 }
 
 const shareTaskWithUser = `-- name: ShareTaskWithUser :exec

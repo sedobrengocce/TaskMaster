@@ -71,6 +71,13 @@ func newEchoContext(e *echo.Echo, method, path string, body []byte) (echo.Contex
 	return c, rec
 }
 
+func setAuthUser(c echo.Context, userID int32) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": float64(userID),
+	})
+	c.Set("user", token)
+}
+
 func createTestJWT(t *testing.T, secret []byte, userID int32, expiry time.Duration) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{

@@ -22,3 +22,6 @@ INSERT INTO shared_projects (project_id, shared_with_user_id) VALUES (?, ?);
 
 -- name: UnshareProjectWithUser :exec
 DELETE FROM shared_projects WHERE project_id = ? AND shared_with_user_id = ?;
+
+-- name: IsProjectSharedWithUser :one
+SELECT EXISTS(SELECT 1 FROM shared_projects WHERE project_id = ? AND shared_with_user_id = ?) AS is_shared;

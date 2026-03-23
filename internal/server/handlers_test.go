@@ -428,10 +428,12 @@ func TestGetProject_Success(t *testing.T) {
 
 	project := db.Project{ID: 1, UserID: 1, Name: "My Project"}
 	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(project, nil)
+	ts.mockDB.On("IsProjectSharedWithUser", mock.Anything, mock.Anything).Maybe().Return(false, nil)
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/1", nil)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.GetProject(c)
 	require.NoError(t, err)
@@ -459,6 +461,7 @@ func TestGetProject_NotFound(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/999", nil)
 	c.SetParamNames("id")
 	c.SetParamValues("999")
+	setAuthUser(c, 1)
 
 	err := ts.server.GetProject(c)
 	require.NoError(t, err)
@@ -470,6 +473,7 @@ func TestGetProject_NotFound(t *testing.T) {
 func TestUpdateProject_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1, Name: "Old"}, nil)
 	ts.mockDB.On("UpdateProject", mock.Anything, db.UpdateProjectParams{
 		ID:   1,
 		Name: "Updated Project",
@@ -479,6 +483,7 @@ func TestUpdateProject_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodPut, "/api/projects/1", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.UpdateProject(c)
 	require.NoError(t, err)
@@ -491,11 +496,13 @@ func TestUpdateProject_Success(t *testing.T) {
 func TestDeleteProject_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
 	ts.mockDB.On("DeleteProject", mock.Anything, int32(1)).Return(nil)
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/projects/1", nil)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.DeleteProject(c)
 	require.NoError(t, err)
@@ -520,6 +527,7 @@ func TestDeleteProject_InvalidID(t *testing.T) {
 func TestSharedProjectHandler_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
 	ts.mockDB.On("ShareProjectWithUser", mock.Anything, db.ShareProjectWithUserParams{
 		ProjectID:        1,
 		SharedWithUserID: 2,
@@ -529,6 +537,7 @@ func TestSharedProjectHandler_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.SharedProjectHandler(c)
 	require.NoError(t, err)
@@ -552,10 +561,13 @@ func TestSharedProjectHandler_InvalidProjectID(t *testing.T) {
 func TestSharedProjectHandler_InvalidBody(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+
 	body := []byte(`{invalid}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.SharedProjectHandler(c)
 	require.NoError(t, err)
@@ -565,12 +577,14 @@ func TestSharedProjectHandler_InvalidBody(t *testing.T) {
 func TestSharedProjectHandler_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
 	ts.mockDB.On("ShareProjectWithUser", mock.Anything, mock.Anything).Return(errors.New("db error"))
 
 	body := []byte(`{"id":2}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.SharedProjectHandler(c)
 	require.NoError(t, err)
@@ -582,6 +596,7 @@ func TestSharedProjectHandler_DBError(t *testing.T) {
 func TestUnshareProjectHandler_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
 	ts.mockDB.On("UnshareProjectWithUser", mock.Anything, db.UnshareProjectWithUserParams{
 		ProjectID:        1,
 		SharedWithUserID: 2,
@@ -591,6 +606,7 @@ func TestUnshareProjectHandler_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects/1/unshare", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.UnshareProjectHandler(c)
 	require.NoError(t, err)
@@ -614,12 +630,14 @@ func TestUnshareProjectHandler_InvalidProjectID(t *testing.T) {
 func TestUnshareProjectHandler_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
 	ts.mockDB.On("UnshareProjectWithUser", mock.Anything, mock.Anything).Return(errors.New("db error"))
 
 	body := []byte(`{"id":2}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/projects/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.UnshareProjectHandler(c)
 	require.NoError(t, err)
@@ -715,6 +733,7 @@ func TestCreateTask_DBError(t *testing.T) {
 func TestListTasksByProject_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
 	tasks := []db.Task{
 		{ID: 1, Title: "Task 1", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1},
 		{ID: 2, Title: "Task 2", TaskType: db.TasksTaskTypeRepetitive, CreatedByUserID: 1},
@@ -724,6 +743,7 @@ func TestListTasksByProject_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/1/tasks", nil)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.ListTasksByProjectHandler(c)
 	require.NoError(t, err)
@@ -785,6 +805,7 @@ func TestListTasksByUser_InvalidUserID(t *testing.T) {
 func TestUpdateTask_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("UpdateTask", mock.Anything, db.UpdateTaskParams{
 		ID:          1,
 		ProjectID:   sql.NullInt32{},
@@ -798,6 +819,7 @@ func TestUpdateTask_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodPut, "/api/tasks/1", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.UpdateTaskHandler(c)
 	require.NoError(t, err)
@@ -810,11 +832,13 @@ func TestUpdateTask_Success(t *testing.T) {
 func TestDeleteTask_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("DeleteTask", mock.Anything, int32(1)).Return(nil)
 
 	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1", nil)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.DeleteTaskHandler(c)
 	require.NoError(t, err)
@@ -839,6 +863,7 @@ func TestDeleteTask_InvalidID(t *testing.T) {
 func TestCompleteTask_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("CompleteTask", mock.Anything, db.CompleteTaskParams{
 		TaskID:            1,
 		CompletedByUserID: 2,
@@ -848,6 +873,7 @@ func TestCompleteTask_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.CompleteTaskHandler(c)
 	require.NoError(t, err)
@@ -871,10 +897,13 @@ func TestCompleteTask_InvalidTaskID(t *testing.T) {
 func TestCompleteTask_InvalidJSON(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+
 	body := []byte(`{invalid}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.CompleteTaskHandler(c)
 	require.NoError(t, err)
@@ -884,12 +913,14 @@ func TestCompleteTask_InvalidJSON(t *testing.T) {
 func TestCompleteTask_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("CompleteTask", mock.Anything, mock.Anything).Return(errors.New("db error"))
 
 	body := []byte(`{"user_id":2}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.CompleteTaskHandler(c)
 	require.NoError(t, err)
@@ -1010,6 +1041,7 @@ func TestGetTaskCompletions_DBError(t *testing.T) {
 func TestShareTaskHandler_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("ShareTaskWithUser", mock.Anything, db.ShareTaskWithUserParams{
 		TaskID:           1,
 		SharedWithUserID: 2,
@@ -1019,6 +1051,7 @@ func TestShareTaskHandler_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.ShareTaskHandler(c)
 	require.NoError(t, err)
@@ -1042,10 +1075,13 @@ func TestShareTaskHandler_InvalidTaskID(t *testing.T) {
 func TestShareTaskHandler_InvalidBody(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+
 	body := []byte(`{invalid}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.ShareTaskHandler(c)
 	require.NoError(t, err)
@@ -1055,12 +1091,14 @@ func TestShareTaskHandler_InvalidBody(t *testing.T) {
 func TestShareTaskHandler_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("ShareTaskWithUser", mock.Anything, mock.Anything).Return(errors.New("db error"))
 
 	body := []byte(`{"id":2}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.ShareTaskHandler(c)
 	require.NoError(t, err)
@@ -1072,6 +1110,7 @@ func TestShareTaskHandler_DBError(t *testing.T) {
 func TestUnshareTaskHandler_Success(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("UnshareTaskWithUser", mock.Anything, db.UnshareTaskWithUserParams{
 		TaskID:           1,
 		SharedWithUserID: 2,
@@ -1081,6 +1120,7 @@ func TestUnshareTaskHandler_Success(t *testing.T) {
 	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.UnshareTaskHandler(c)
 	require.NoError(t, err)
@@ -1104,14 +1144,261 @@ func TestUnshareTaskHandler_InvalidTaskID(t *testing.T) {
 func TestUnshareTaskHandler_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
 	ts.mockDB.On("UnshareTaskWithUser", mock.Anything, mock.Anything).Return(errors.New("db error"))
 
 	body := []byte(`{"id":2}`)
 	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/share", body)
 	c.SetParamNames("id")
 	c.SetParamValues("1")
+	setAuthUser(c, 1)
 
 	err := ts.server.UnshareTaskHandler(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// ── Authorization: Forbidden tests (ownership-only) ─────────────
+
+func TestUpdateProject_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+
+	body := []byte(`{"name":"Updated Project"}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPut, "/api/projects/1", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.UpdateProject(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestDeleteProject_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/projects/1", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.DeleteProject(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestSharedProjectHandler_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.SharedProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestUnshareProjectHandler_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/projects/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.UnshareProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestUpdateTask_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+
+	body := []byte(`{"title":"Updated Task","task_type":"single"}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPut, "/api/tasks/1", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.UpdateTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestDeleteTask_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.DeleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestShareTaskHandler_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.ShareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestUnshareTaskHandler_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.UnshareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// ── Authorization: Owner OR Shared access tests ─────────────────
+
+func TestGetProject_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+	ts.mockDB.On("IsProjectSharedWithUser", mock.Anything, db.IsProjectSharedWithUserParams{
+		ProjectID: 1, SharedWithUserID: 99,
+	}).Return(false, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/1", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.GetProject(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestGetProject_SharedAccess(t *testing.T) {
+	ts := newTestServer(t)
+
+	project := db.Project{ID: 1, UserID: 1, Name: "Shared Project"}
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(project, nil)
+	ts.mockDB.On("IsProjectSharedWithUser", mock.Anything, db.IsProjectSharedWithUserParams{
+		ProjectID: 1, SharedWithUserID: 99,
+	}).Return(true, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/1", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.GetProject(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListTasksByProject_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+	ts.mockDB.On("IsProjectSharedWithUser", mock.Anything, db.IsProjectSharedWithUserParams{
+		ProjectID: 1, SharedWithUserID: 99,
+	}).Return(false, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/1/tasks", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.ListTasksByProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestListTasksByProject_SharedAccess(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetProjectById", mock.Anything, int32(1)).Return(db.Project{ID: 1, UserID: 1}, nil)
+	ts.mockDB.On("IsProjectSharedWithUser", mock.Anything, db.IsProjectSharedWithUserParams{
+		ProjectID: 1, SharedWithUserID: 99,
+	}).Return(true, nil)
+	ts.mockDB.On("GetTaskListByProjectId", mock.Anything, sql.NullInt32{Int32: 1, Valid: true}).Return([]db.Task{}, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/projects/1/tasks", nil)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.ListTasksByProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestCompleteTask_Forbidden(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+	ts.mockDB.On("IsTaskSharedWithUser", mock.Anything, db.IsTaskSharedWithUserParams{
+		TaskID: 1, SharedWithUserID: 99,
+	}).Return(false, nil)
+
+	body := []byte(`{"user_id":99}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.CompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestCompleteTask_SharedAccess(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTaskById", mock.Anything, int32(1)).Return(db.Task{ID: 1, CreatedByUserID: 1}, nil)
+	ts.mockDB.On("IsTaskSharedWithUser", mock.Anything, db.IsTaskSharedWithUserParams{
+		TaskID: 1, SharedWithUserID: 99,
+	}).Return(true, nil)
+	ts.mockDB.On("CompleteTask", mock.Anything, db.CompleteTaskParams{
+		TaskID: 1, CompletedByUserID: 99,
+	}).Return(nil)
+
+	body := []byte(`{"user_id":99}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/complete", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+	setAuthUser(c, 99)
+
+	err := ts.server.CompleteTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
