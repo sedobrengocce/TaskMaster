@@ -536,6 +536,32 @@ func TestSharedProjectHandler_Success(t *testing.T) {
 	ts.mockDB.AssertExpectations(t)
 }
 
+func TestSharedProjectHandler_InvalidProjectID(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects/abc/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.SharedProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestSharedProjectHandler_InvalidBody(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{invalid}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/projects/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.SharedProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func TestSharedProjectHandler_DBError(t *testing.T) {
 	ts := newTestServer(t)
 
@@ -570,6 +596,34 @@ func TestUnshareProjectHandler_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	ts.mockDB.AssertExpectations(t)
+}
+
+func TestUnshareProjectHandler_InvalidProjectID(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/projects/abc/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.UnshareProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUnshareProjectHandler_DBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("UnshareProjectWithUser", mock.Anything, mock.Anything).Return(errors.New("db error"))
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/projects/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.UnshareProjectHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
 // ── checkClientType ─────────────────────────────────────────────
