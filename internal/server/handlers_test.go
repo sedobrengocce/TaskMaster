@@ -1004,3 +1004,114 @@ func TestGetTaskCompletions_DBError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
+
+// ── ShareTask ───────────────────────────────────────────────────
+
+func TestShareTaskHandler_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("ShareTaskWithUser", mock.Anything, db.ShareTaskWithUserParams{
+		TaskID:           1,
+		SharedWithUserID: 2,
+	}).Return(nil)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.ShareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestShareTaskHandler_InvalidTaskID(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/abc/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.ShareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestShareTaskHandler_InvalidBody(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{invalid}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.ShareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestShareTaskHandler_DBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("ShareTaskWithUser", mock.Anything, mock.Anything).Return(errors.New("db error"))
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodPost, "/api/tasks/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.ShareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// ── UnshareTask ─────────────────────────────────────────────────
+
+func TestUnshareTaskHandler_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("UnshareTaskWithUser", mock.Anything, db.UnshareTaskWithUserParams{
+		TaskID:           1,
+		SharedWithUserID: 2,
+	}).Return(nil)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.UnshareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestUnshareTaskHandler_InvalidTaskID(t *testing.T) {
+	ts := newTestServer(t)
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/abc/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("abc")
+
+	err := ts.server.UnshareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUnshareTaskHandler_DBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("UnshareTaskWithUser", mock.Anything, mock.Anything).Return(errors.New("db error"))
+
+	body := []byte(`{"id":2}`)
+	c, rec := newEchoContext(ts.server.echo, http.MethodDelete, "/api/tasks/1/share", body)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err := ts.server.UnshareTaskHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}

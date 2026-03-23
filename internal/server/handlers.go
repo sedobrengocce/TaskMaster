@@ -561,6 +561,54 @@ func (s *Server) UnshareProjectHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Project unshared successfully"})
 }
 
+func (s *Server) ShareTaskHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+	var req ShareRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	err = s.DB.ShareTaskWithUser(c.Request().Context(), db.ShareTaskWithUserParams{
+		TaskID:           int32(taskID),
+		SharedWithUserID: req.ID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to share task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task shared successfully"})
+}
+
+func (s *Server) UnshareTaskHandler(c echo.Context) error {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid task ID"})
+	}
+	var req ShareRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format"})
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	err = s.DB.UnshareTaskWithUser(c.Request().Context(), db.UnshareTaskWithUserParams{
+		TaskID:           int32(taskID),
+		SharedWithUserID: req.ID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to unshare task"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Task unshared successfully"})
+}
+
 type CreateTaskRequest struct {
 	ProjectID   *int32  `json:"project_id" validate:"omitempty"`
 	Title       string  `json:"title" validate:"required,min=1,max=255"`
