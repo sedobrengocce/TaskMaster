@@ -980,6 +980,116 @@ func (s *Server) UncompleteTaskHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Task uncompleted successfully"})
 }
 
+// ── Weekly View ─────────────────────────────────────────────────
+
+type WeeklyTaskDay struct {
+	Date      string `json:"date"`
+	Weekday   string `json:"weekday"`
+	Completed bool   `json:"completed"`
+}
+
+type WeeklyTask struct {
+	ID          int32           `json:"id"`
+	Title       string          `json:"title"`
+	Description *string         `json:"description,omitempty"`
+	TaskType    string          `json:"task_type"`
+	Priority    *int32          `json:"priority,omitempty"`
+	ProjectID   *int32          `json:"project_id,omitempty"`
+	Days        []WeeklyTaskDay `json:"days"`
+}
+
+type WeeklyViewResponse struct {
+	WeekStart string       `json:"week_start"`
+	WeekEnd   string       `json:"week_end"`
+	Tasks     []WeeklyTask `json:"tasks"`
+}
+
+func (s *Server) GetWeeklyViewHandler(c echo.Context) error {
+	authUserID, err := getUserIDFromContext(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+	}
+
+	var refDate time.Time
+	weekParam := c.QueryParam("week")
+	if weekParam == "" {
+		refDate = time.Now()
+	} else {
+		refDate, err = time.Parse("2006-01-02", weekParam)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid week parameter, expected YYYY-MM-DD"})
+		}
+	}
+
+	offset := (int(refDate.Weekday()) - int(time.Monday) + 7) % 7
+	monday := time.Date(refDate.Year(), refDate.Month(), refDate.Day()-offset, 0, 0, 0, 0, time.UTC)
+	sunday := monday.AddDate(0, 0, 7)
+
+	tasks, err := s.DB.GetTasksByUserId(c.Request().Context(), db.GetTasksByUserIdParams{
+		UserID: authUserID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve tasks"})
+	}
+
+	completions, err := s.DB.GetCompletionsForWeek(c.Request().Context(), db.GetCompletionsForWeekParams{
+		UserID:    authUserID,
+		StartDate: sql.NullTime{Time: monday, Valid: true},
+		EndDate:   sql.NullTime{Time: sunday, Valid: true},
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve completions"})
+	}
+
+	completionMap := make(map[int32]map[string]bool)
+	for _, comp := range completions {
+		if comp.CompletedAt.Valid {
+			dateStr := comp.CompletedAt.Time.Format("2006-01-02")
+			if completionMap[comp.TaskID] == nil {
+				completionMap[comp.TaskID] = make(map[string]bool)
+			}
+			completionMap[comp.TaskID][dateStr] = true
+		}
+	}
+
+	weeklyTasks := make([]WeeklyTask, 0, len(tasks))
+	for _, t := range tasks {
+		wt := WeeklyTask{
+			ID:       t.ID,
+			Title:    t.Title,
+			TaskType: string(t.TaskType),
+		}
+		if t.Description.Valid {
+			wt.Description = &t.Description.String
+		}
+		if t.Priority.Valid {
+			wt.Priority = &t.Priority.Int32
+		}
+		if t.ProjectID.Valid {
+			wt.ProjectID = &t.ProjectID.Int32
+		}
+
+		days := make([]WeeklyTaskDay, 7)
+		for i := 0; i < 7; i++ {
+			day := monday.AddDate(0, 0, i)
+			dateStr := day.Format("2006-01-02")
+			days[i] = WeeklyTaskDay{
+				Date:      dateStr,
+				Weekday:   day.Weekday().String(),
+				Completed: completionMap[t.ID][dateStr],
+			}
+		}
+		wt.Days = days
+		weeklyTasks = append(weeklyTasks, wt)
+	}
+
+	return c.JSON(http.StatusOK, WeeklyViewResponse{
+		WeekStart: monday.Format("2006-01-02"),
+		WeekEnd:   monday.AddDate(0, 0, 6).Format("2006-01-02"),
+		Tasks:     weeklyTasks,
+	})
+}
+
 func (s *Server) GetTaskCompletionsHandler(c echo.Context) error {
 	taskID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {

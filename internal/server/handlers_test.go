@@ -1402,3 +1402,186 @@ func TestCompleteTask_SharedAccess(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
+
+// ── GetWeeklyView ───────────────────────────────────────────────
+
+func TestGetWeeklyViewHandler_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	tasks := []db.Task{
+		{ID: 1, Title: "Task A", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1},
+		{ID: 2, Title: "Task B", TaskType: db.TasksTaskTypeRepetitive, CreatedByUserID: 1},
+	}
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return(tasks, nil)
+
+	monday := time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)
+	sunday := monday.AddDate(0, 0, 7)
+	completions := []db.TaskLog{
+		{ID: 1, TaskID: 1, CompletedByUserID: 1, CompletedAt: sql.NullTime{Time: time.Date(2026, 3, 9, 10, 0, 0, 0, time.UTC), Valid: true}},
+		{ID: 2, TaskID: 2, CompletedByUserID: 1, CompletedAt: sql.NullTime{Time: time.Date(2026, 3, 11, 14, 0, 0, 0, time.UTC), Valid: true}},
+	}
+	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, db.GetCompletionsForWeekParams{
+		UserID:    1,
+		StartDate: sql.NullTime{Time: monday, Valid: true},
+		EndDate:   sql.NullTime{Time: sunday, Valid: true},
+	}).Return(completions, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp WeeklyViewResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "2026-03-09", resp.WeekStart)
+	assert.Equal(t, "2026-03-15", resp.WeekEnd)
+	assert.Len(t, resp.Tasks, 2)
+	assert.Len(t, resp.Tasks[0].Days, 7)
+	// Task A completed on Monday 2026-03-09
+	assert.True(t, resp.Tasks[0].Days[0].Completed)
+	assert.False(t, resp.Tasks[0].Days[1].Completed)
+	// Task B completed on Wednesday 2026-03-11
+	assert.False(t, resp.Tasks[1].Days[0].Completed)
+	assert.True(t, resp.Tasks[1].Days[2].Completed)
+	ts.mockDB.AssertExpectations(t)
+}
+
+func TestGetWeeklyViewHandler_DefaultCurrentWeek(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return([]db.Task{}, nil)
+	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp WeeklyViewResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+
+	// Verify week_start is a Monday
+	parsed, parseErr := time.Parse("2006-01-02", resp.WeekStart)
+	require.NoError(t, parseErr)
+	assert.Equal(t, time.Monday, parsed.Weekday())
+}
+
+func TestGetWeeklyViewHandler_InvalidWeekParam(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=not-a-date", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestGetWeeklyViewHandler_MidWeekDate(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return([]db.Task{}, nil)
+	monday := time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)
+	sunday := monday.AddDate(0, 0, 7)
+	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, db.GetCompletionsForWeekParams{
+		UserID:    1,
+		StartDate: sql.NullTime{Time: monday, Valid: true},
+		EndDate:   sql.NullTime{Time: sunday, Valid: true},
+	}).Return([]db.TaskLog{}, nil)
+
+	// Wednesday 2026-03-11 should normalize to Monday 2026-03-09
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-11", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp WeeklyViewResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "2026-03-09", resp.WeekStart)
+}
+
+func TestGetWeeklyViewHandler_TasksDBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, mock.Anything).Return([]db.Task{}, errors.New("db error"))
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestGetWeeklyViewHandler_CompletionsDBError(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, mock.Anything).Return([]db.Task{}, nil)
+	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, errors.New("db error"))
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestGetWeeklyViewHandler_Unauthorized(t *testing.T) {
+	ts := newTestServer(t)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
+	// no setAuthUser
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestGetWeeklyViewHandler_NoTasks(t *testing.T) {
+	ts := newTestServer(t)
+
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return([]db.Task{}, nil)
+	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp WeeklyViewResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, []WeeklyTask{}, resp.Tasks)
+}
+
+func TestGetWeeklyViewHandler_NoCompletions(t *testing.T) {
+	ts := newTestServer(t)
+
+	tasks := []db.Task{
+		{ID: 1, Title: "Task A", TaskType: db.TasksTaskTypeSingle, CreatedByUserID: 1},
+	}
+	ts.mockDB.On("GetTasksByUserId", mock.Anything, db.GetTasksByUserIdParams{UserID: 1}).Return(tasks, nil)
+	ts.mockDB.On("GetCompletionsForWeek", mock.Anything, mock.Anything).Return([]db.TaskLog{}, nil)
+
+	c, rec := newEchoContext(ts.server.echo, http.MethodGet, "/api/weekly?week=2026-03-09", nil)
+	setAuthUser(c, 1)
+
+	err := ts.server.GetWeeklyViewHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp WeeklyViewResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Len(t, resp.Tasks, 1)
+	for _, day := range resp.Tasks[0].Days {
+		assert.False(t, day.Completed)
+	}
+}
